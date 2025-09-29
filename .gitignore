@@ -1,0 +1,29 @@
+# Byte-compiled / cache
+__pycache__/
+*.pyc
+
+# Env
+.env
+.env.*
+api/.venv/
+api/.venv*/
+
+# Local DB
+api/dev.db
+api/dev.db-*
+
+# Node
+**/node_modules/
+**/.next/
+**/out/
+**/.turbo/
+
+# OS
+.DS_Store
+
+# Logs
+**/*.log
+
+# Build images
+**/dist/
+
