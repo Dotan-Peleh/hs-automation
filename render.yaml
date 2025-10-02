@@ -2,8 +2,7 @@ services:
   - type: web
     name: hs-trends-api
     runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: ./api
+    dockerfilePath: api/Dockerfile
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -22,8 +21,7 @@ services:
   - type: worker
     name: hs-trends-worker
     runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: ./worker
+    dockerfilePath: worker/Dockerfile
     envVars:
       - key: DATABASE_URL
         fromDatabase:
