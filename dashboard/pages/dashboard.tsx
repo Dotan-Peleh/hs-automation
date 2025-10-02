@@ -263,7 +263,11 @@ const Dashboard = () => {
           if (page === 1) {
             setInsightsCats(j.top_categories || []);
             setInsightsWords(j.top_keywords || []);
-            setIssueAnalysis(j.issue_analysis || null);
+            // Merge reply counts into issue_analysis
+            const analysis = j.issue_analysis || {};
+            analysis.replied_count = j.replied_count || 0;
+            analysis.unreplied_count = j.unreplied_count || 0;
+            setIssueAnalysis(analysis);
           }
           const batch: any[] = j.recommendations || [];
           if (!batch.length) break;
@@ -754,6 +758,28 @@ const Dashboard = () => {
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 24h Summary</h3>
           <div className="space-y-4">
+            {/* Response Status */}
+            {issueAnalysis && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="text-xs font-medium text-gray-700 mb-1">Response Status</div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {issueAnalysis.replied_count || 0}/{(issueAnalysis.replied_count || 0) + (issueAnalysis.unreplied_count || 0)}
+                    </div>
+                    <div className="text-xs text-gray-600">Replied</div>
+                  </div>
+                  {issueAnalysis.unreplied_count > 0 && (
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-orange-600">
+                        {issueAnalysis.unreplied_count}
+                      </div>
+                      <div className="text-xs text-gray-600">Need Response</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div>
               <div className="text-xs font-medium text-gray-700 mb-2">Top Intents</div>
               <div className="space-y-1">
@@ -843,9 +869,9 @@ const Dashboard = () => {
       {/* ALL MESSAGES - Detailed List at Bottom */}
       <div className="mt-6 bg-white rounded-lg shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">📋 All Recent Messages (48h)</h3>
-        <div className="space-y-3">
-          {(insightRecs.filter((x:any)=>!x.__loading).length === 0) && (
             <div className="space-y-3">
+          {(insightRecs.filter((x:any)=>!x.__loading).length === 0) && (
+              <div className="space-y-3">
               {[1, 2, 3, 4, 5].map(i => (
                 <div key={i} className="border rounded-lg p-3 bg-gray-50 animate-pulse">
                   <div className="flex items-center gap-2 mb-2">
@@ -855,8 +881,8 @@ const Dashboard = () => {
                   </div>
                   <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
                   <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              ))}
+              </div>
+            ))}
             </div>
           )}
           {insightRecs
@@ -915,7 +941,7 @@ const Dashboard = () => {
                           r.severity_bucket === 'medium' ? 'bg-blue-500' : 'bg-green-500'
                         }`}>
                           {(r.severity_bucket || 'low').toUpperCase()}
-                        </span>
+                      </span>
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-white border border-gray-300">
                           {getIntentLabel()}
                         </span>
@@ -1011,17 +1037,17 @@ const Dashboard = () => {
                           >
                             Open →
                           </a>
-                        )}
-                      </div>
+                    )}
+                  </div>
                       <button
                         onClick={() => setFeedbackTicket(r)}
                         className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200 hover:bg-blue-100 transition-colors"
                       >
                         🏷️ Fix Tags
                       </button>
-                    </div>
-                  </div>
                 </div>
+              </div>
+            </div>
               );
             })}
         </div>

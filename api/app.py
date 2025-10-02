@@ -1198,6 +1198,15 @@ def insights(
         # Generic bug reports without critical keywords stay lower priority
         # (e.g., "I found a bug" feedback vs "app crashes every time")
 
+    # Count replied vs unreplied tickets
+    replied_count = 0
+    unreplied_count = 0
+    for r in recs:
+        if r.get("agent_replied"):
+            replied_count += 1
+        else:
+            unreplied_count += 1
+    
     top_categories = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)[:10]
     top_keywords = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:20]
     top_clusters = sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -1271,6 +1280,8 @@ def insights(
         "total": total,
         "page": int(page),
         "page_size": int(_ps),
+        "replied_count": replied_count,
+        "unreplied_count": unreplied_count,
         "top_categories": [{"name": k, "count": v} for k, v in top_categories],
         "top_keywords": [{"word": k, "count": v} for k, v in top_keywords],
         "top_clusters": [{"cluster_key": k, "count": v} for k, v in top_clusters],
