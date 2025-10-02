@@ -9,6 +9,7 @@ from engine import classify, fingerprint, anomaly, severity
 from engine import embeddings
 from engine import pine as pinevec
 from engine import llm
+from engine import auto_learn
 try:
     from gensim.summarization import keywords as gensim_keywords
 except Exception:
@@ -140,6 +141,66 @@ def get_dismissed_tickets():
     with get_session() as s:
         rows = s.query(TicketFeedback).filter(TicketFeedback.action_type.in_(['seen', 'dismissed'])).all()
     return {"dismissed": [r.conversation_id for r in rows]}
+
+# Get all tag corrections to analyze and improve the model
+@app.get("/admin/feedback/summary")
+def feedback_summary():
+    """Analyze all tag corrections to identify patterns and improve detection."""
+    import json
+    with get_session() as s:
+        corrections = s.query(TicketFeedback).filter_by(action_type='tag_correction').all()
+    
+    intent_corrections = {}
+    severity_corrections = {}
+    all_feedback = []
+    
+    for fb in corrections:
+        try:
+            data = json.loads(fb.feedback_data or '{}')
+            if data.get('correct_intent'):
+                intent_corrections[data['correct_intent']] = intent_corrections.get(data['correct_intent'], 0) + 1
+            if data.get('correct_severity'):
+                severity_corrections[data['correct_severity']] = severity_corrections.get(data['correct_severity'], 0) + 1
+            
+            # Get the original ticket to compare
+            with get_session() as s2:
+                conv = s2.query(HsConversation).filter_by(id=fb.conversation_id).first()
+                if conv:
+                    all_feedback.append({
+                        'ticket_number': conv.number,
+                        'subject': conv.subject,
+                        'text_preview': (conv.last_text or '')[:200],
+                        'correct_intent': data.get('correct_intent'),
+                        'correct_severity': data.get('correct_severity'),
+                        'notes': data.get('notes'),
+                        'created_at': fb.created_at.isoformat() if fb.created_at else None
+                    })
+        except Exception:
+            pass
+    
+    return {
+        'total_corrections': len(corrections),
+        'intent_distribution': intent_corrections,
+        'severity_distribution': severity_corrections,
+        'all_feedback': all_feedback,
+        'insights': {
+            'most_corrected_intent': max(intent_corrections.items(), key=lambda x: x[1])[0] if intent_corrections else None,
+            'most_corrected_severity': max(severity_corrections.items(), key=lambda x: x[1])[0] if severity_corrections else None
+        }
+    }
+
+# Get auto-learning statistics
+@app.get("/admin/learning/stats")
+def learning_stats():
+    """Get statistics about the automatic learning system."""
+    stats = auto_learn.get_feedback_stats()
+    stats['status'] = 'active' if stats['total_learned_intents'] > 0 else 'waiting_for_feedback'
+    stats['message'] = (
+        f"Learning from {stats['total_learned_intents']} intent patterns and "
+        f"{stats['total_exact_matches']} exact matches. "
+        "Corrections are applied automatically to all new tickets!"
+    ) if stats['total_learned_intents'] > 0 else "No feedback collected yet. Start correcting tags to teach the AI!"
+    return stats
 
 # --- Vector auto-index helpers ---
 def _vector_auto_enabled() -> bool:
@@ -932,6 +993,24 @@ def insights(
         for t in (hs_extra or []):
             if t not in custom_wo_intent:
                 custom_wo_intent.append(t)
+
+        # 🧠 AUTO-LEARNING: Apply user feedback corrections automatically
+        try:
+            learned_intent, learned_severity = auto_learn.apply_learned_corrections(
+                text=raw,
+                subject=(c.subject or ''),
+                predicted_intent=intent_val,
+                predicted_severity=bucket
+            )
+            if learned_intent and learned_intent != intent_val:
+                intent_val = learned_intent
+                # Also add a tag to show it was learned
+                if 'tag:learned_correction' not in custom_wo_intent:
+                    custom_wo_intent.append('tag:learned_correction')
+            if learned_severity and learned_severity != bucket:
+                bucket = learned_severity
+        except Exception:
+            pass  # Fail gracefully if learning module has issues
 
         # refine categories: replace generic 'bug' with more specific ones based on tags/intent
         tag_set = set(custom_wo_intent)

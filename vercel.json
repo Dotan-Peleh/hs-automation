@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "dashboard/package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dashboard/$1"
+    }
+  ],
+  "env": {
+    "NEXT_PUBLIC_API_BASE": "@api_base_url"
+  }
+}
+
