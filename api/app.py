@@ -31,6 +31,13 @@ if not DB_URL:
 engine = create_engine(DB_URL, pool_pre_ping=True, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
 Session = sessionmaker(bind=engine)
 
+# Auto-create all tables on startup (safe - won't drop existing data)
+try:
+    Base.metadata.create_all(engine)
+    print("✅ Database tables created/verified")
+except Exception as e:
+    print(f"⚠️  Database table creation warning: {e}")
+
 app = FastAPI(title="HS Trends")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_headers=["*"], allow_methods=["*"])
 
