@@ -1141,7 +1141,8 @@ def insights(
         if "tag:critical_crash" in tags_l or "tag:item_stuck" in tags_l:
             r["severity_bucket"] = "high"
         elif "tag:app_freeze" in tags_l:
-            r["severity_bucket"] = "high" if r["severity_bucket"] == "low" else r["severity_bucket"]
+            # Freeze is always HIGH - blocks gameplay completely
+            r["severity_bucket"] = "high"
         elif "crash" in cats_l:
             r["severity_bucket"] = "high"
         # Item disappeared/missing items (affects user purchases/progress)
