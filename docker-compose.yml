@@ -5,6 +5,9 @@ services:
     env_file: .env
     ports: ["8080:8080"]
     depends_on: [db, redis]
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
   dashboard:
     build: ./dashboard
     env_file: .env

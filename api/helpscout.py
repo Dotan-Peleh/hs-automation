@@ -8,10 +8,9 @@ def _try_refresh():
         data = {
             "grant_type": "refresh_token",
             "refresh_token": row.refresh_token,
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
         }
-        r = requests.post(OAUTH_TOKEN_URL, data=data, timeout=10)
+        # Help Scout prefers client auth via HTTP Basic
+        r = requests.post(OAUTH_TOKEN_URL, data=data, auth=(CLIENT_ID, CLIENT_SECRET), headers={"Accept":"application/json"}, timeout=10)
         if r.status_code >= 300:
             return
         j = r.json()
@@ -31,13 +30,34 @@ _pat = (os.getenv('HS_API_TOKEN') or '').strip()
 
 
 def _bearer_header():
-    # Prefer OAuth token if present; fallback to PAT if provided
+    """Return Authorization header.
+
+    Behavior:
+    - Prefer OAuth access_token if present. If token is close to expiry,
+      proactively refresh using the stored refresh_token.
+    - Fallback to API key (PAT) via HTTP Basic auth.
+    """
     with get_session() as s:
         row = get_hs_tokens(s)
-        if row and row.access_token and (not row.expires_at or row.expires_at > datetime.utcnow()):
-            return {"Authorization": f"Bearer {row.access_token}"}
+        if row and row.access_token:
+            # Proactively refresh if within N minutes of expiry
+            try:
+                if row.expires_at is not None:
+                    threshold_min = int(os.getenv("HS_REFRESH_THRESHOLD_MIN", "5") or "5")
+                    if (row.expires_at - datetime.utcnow()).total_seconds() <= threshold_min * 60:
+                        _try_refresh()
+                        row = get_hs_tokens(s)
+                return {"Authorization": f"Bearer {row.access_token}"}
+            except Exception:
+                # On any error, fall through to PAT/basic if present
+                pass
     if _pat:
-        return {"Authorization": f"Bearer {_pat}"}
+        # Help Scout API key uses HTTP Basic auth (api_key as username, blank password)
+        try:
+            b64 = base64.b64encode(f"{_pat}:".encode("utf-8")).decode("utf-8")
+            return {"Authorization": f"Basic {b64}"}
+        except Exception:
+            pass
     return {}
 
 HDRS_BASE = {"Accept":"application/json","User-Agent":"hs-trends/0.1"}
@@ -68,15 +88,26 @@ def extract_text(conv: dict) -> str:
     subj = conv.get("subject") or ""
     threads = conv.get("_embedded", {}).get("threads")
     if not isinstance(threads, list):
-        # fallback to threads endpoint if needed
+        # fallback if threads not embedded
         threads = []
-    bodies = []
+    # Concatenate entire thread (user + agent) to give full context to enrichment/tagging
+    parts = []
     for t in threads:
         if not isinstance(t, dict):
             continue
-        bodies += [t.get("text"), t.get("body"), _strip_html(t.get("html"))]
-    bodies = [b for b in bodies if b]
-    return (subj + "\n" + (bodies[-1] if bodies else "")).strip()
+        # Prefer plain text, then body, then HTML stripped
+        for k in ("text", "body", "html"):
+            v = t.get(k)
+            if v:
+                parts.append(_strip_html(v) if k == "html" else str(v))
+                break
+    # Deduplicate adjacent empties and trim
+    parts = [p.strip() for p in parts if isinstance(p, str) and p.strip()]
+    full = (subj + "\n" + ("\n---\n".join(parts) if parts else "")).strip()
+    # Cap extremely long conversations to a reasonable size to avoid over-enrichment cost
+    if len(full) > 20000:
+        full = full[:20000]
+    return full
 
 def extract_customer_name(conv: dict):
     try:

@@ -56,6 +56,30 @@ class HsConversation(Base):
     tags = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+class HsEnrichment(Base):
+    __tablename__ = 'hs_enrichment'
+    conv_id = Column(BigInteger, primary_key=True)
+    content_hash = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    categories = Column(Text, nullable=True)  # comma-separated
+    platform = Column(String(32), nullable=True)
+    app_version = Column(String(64), nullable=True)
+    level = Column(Integer, nullable=True)
+    intent = Column(String(64), nullable=True)
+    one_liner = Column(Text, nullable=True)
+    severity_bucket = Column(String(16), nullable=True)
+    severity_score = Column(Integer, nullable=True)
+    last_enriched_at = Column(DateTime, default=datetime.utcnow)
+
+class TicketFeedback(Base):
+    __tablename__ = 'ticket_feedback'
+    id = Column(Integer, primary_key=True)
+    conversation_id = Column(BigInteger, nullable=False)
+    ticket_number = Column(Integer, nullable=True)
+    action_type = Column(Text, nullable=False)  # 'seen', 'dismissed', 'tag_correction'
+    feedback_data = Column(Text, nullable=True)  # JSON string with details
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class TicketEvent(Base):
     __tablename__ = 'ticket_event'
     id = Column(Integer, primary_key=True)

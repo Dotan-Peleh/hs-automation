@@ -11,9 +11,10 @@ HEADERS = {
 }
 
 SYSTEM = (
-    "You are a support incident enricher. Read the latest customer message and summarize the core issue in one sentence. "
+    "You are a support incident enricher. Read the latest customer message and summarize the core issue in one short sentence. "
     "Then suggest up to 2 short categories (lowercase, snake_case), and extract lightweight fields if present: platform (android/ios/web/desktop), app_version, level (integer). "
-    "Output STRICT JSON only with keys: summary (string), categories (array of strings), platform (string|null), app_version (string|null), level (integer|null). No prose."
+    "If a user identifier is present (e.g., 'user:abc123', 'distinct_id abc123', 'id abc123'), extract it as distinct_id (string). "
+    "Output STRICT JSON only with keys: summary (string), categories (array of strings), platform (string|null), app_version (string|null), level (integer|null), distinct_id (string|null). No prose."
 )
 
 
@@ -54,6 +55,21 @@ def enrich(text: str) -> dict:
             "platform": parsed.get("platform"),
             "app_version": parsed.get("app_version"),
             "level": parsed.get("level"),
+            "distinct_id": (parsed.get("distinct_id") or _extract_id_like(parsed.get("summary") or "") ),
         }
     except Exception:
         return {}
+
+
+def _extract_id_like(text: str) -> str | None:
+    try:
+        import re
+        t = text or ""
+        m = re.search(r"(?i)user\s*id\s*[=:]\s*([A-Za-z0-9\-]{6,})", t)
+        if not m:
+            m = re.search(r"(?i)userid\s*[=:]\s*([A-Za-z0-9\-]{6,})", t)
+        if not m:
+            m = re.search(r"(?i)distinct[_\s-]*id\s*[=:]\s*([A-Za-z0-9\-]{6,})", t)
+        return m.group(1) if m else None
+    except Exception:
+        return None
