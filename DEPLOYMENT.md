@@ -25,19 +25,22 @@
 ### Part 2: Deploy Dashboard to Vercel (2 minutes)
 
 1. **Go to [vercel.com](https://vercel.com)** and sign up (free)
-2. **Import project** → Select GitHub repo
-3. **Configure:**
-   - Framework: Next.js
-   - Root Directory: `dashboard`
-   - Build Command: `npm run build`
-   - Output Directory: `.next`
+2. **Import project** → Select GitHub repo: `Dotan-Peleh/hs-automation`
+3. **IMPORTANT - Configure Project:**
+   - Framework Preset: **Next.js**
+   - Root Directory: **`dashboard`** (click "Edit" and type `dashboard`)
+   - Build Command: Leave default (`npm run build`)
+   - Output Directory: Leave default (`.next`)
 
-4. **Add environment variable:**
-   ```
-   NEXT_PUBLIC_API_BASE=https://hs-trends-api.onrender.com
-   ```
+4. **Before clicking Deploy**, go to **Environment Variables** section:
+   - Click "Add New"
+   - Key: `NEXT_PUBLIC_API_BASE`
+   - Value: `https://hs-trends-api.onrender.com` (or your Render URL from Part 1)
+   - Select: Production, Preview, Development
 
-5. **Deploy!** → Your dashboard will be at `https://your-project.vercel.app`
+5. **Click "Deploy"** → Your dashboard will be at `https://your-project.vercel.app`
+
+**Note:** If you see the secret error, just delete any environment variable entries in Vercel and re-add them through the UI.
 
 ### Part 3: Update Help Scout Webhook
 

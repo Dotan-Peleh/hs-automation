@@ -1,19 +1,6 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "dashboard/package.json",
-      "use": "@vercel/next"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "dashboard/$1"
-    }
-  ],
-  "env": {
-    "NEXT_PUBLIC_API_BASE": "@api_base_url"
-  }
+  "buildCommand": "cd dashboard && npm install && npm run build",
+  "outputDirectory": "dashboard/.next",
+  "framework": "nextjs"
 }
 
