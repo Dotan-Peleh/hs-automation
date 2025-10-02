@@ -574,17 +574,20 @@ const Dashboard = () => {
                               let label = t;
                               
                               if (lower.includes('crash')) {
-                                color = 'bg-red-100 text-red-800 border border-red-300';
+                                color = 'bg-red-100 text-red-800 border border-red-300 font-semibold';
                                 label = '🔥 Crash';
                               } else if (lower.includes('freeze')) {
-                                color = 'bg-cyan-100 text-cyan-800 border border-cyan-300';
+                                color = 'bg-cyan-100 text-cyan-800 border border-cyan-300 font-semibold';
                                 label = '❄️ Freeze';
                               } else if (lower.includes('item') && lower.includes('stuck')) {
-                                color = 'bg-rose-100 text-rose-800 border border-rose-300';
+                                color = 'bg-rose-100 text-rose-800 border border-rose-300 font-semibold';
                                 label = '🎯 Item Stuck';
                               } else if (lower.includes('progress') || lower.includes('lost')) {
-                                color = 'bg-purple-100 text-purple-800 border border-purple-300';
+                                color = 'bg-purple-100 text-purple-800 border border-purple-300 font-semibold';
                                 label = '💾 Progress Lost';
+                              } else if (lower.includes('how_to') || lower.includes('how to')) {
+                                color = 'bg-blue-100 text-blue-800 border border-blue-300 font-semibold';
+                                label = '❓ How-To';
                               }
                               
                               return (
@@ -929,6 +932,9 @@ const Dashboard = () => {
                             if (lower.includes('crash')) {
                               color = 'bg-red-100 text-red-800 border border-red-300 font-semibold';
                               label = '🔥 Crash';
+                            } else if (lower.includes('how_to') || lower.includes('how to')) {
+                              color = 'bg-blue-100 text-blue-800 border border-blue-300 font-semibold';
+                              label = '❓ How-To';
                             } else if (lower.includes('progress') || lower.includes('lost')) {
                               color = 'bg-purple-100 text-purple-800 border border-purple-300 font-semibold';
                               label = '💾 Progress Lost';

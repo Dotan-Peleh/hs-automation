@@ -733,6 +733,7 @@ def insights(
             tags.append("intent:feature_request")
         if any(k in t for k in ("how do i", "how to", "where is", "can you explain", "how can i")):
             tags.append("intent:how_to")
+            tags.append("tag:how_to")  # Also add as visible tag
         # Device migration
         if any(k in t for k in ("new phone", "new device", "switch device", "migrate", "transfer progress", "restore purchase")):
             tags.append("intent:device_migration")
@@ -885,12 +886,33 @@ def insights(
                 if ccat not in ('uncategorized','device'):
                     primary_cat = ccat.replace('_',' ')
                     break
-            label = intent_map.get(intent, primary_cat or 'support request')
+            # Build more descriptive label from actual ticket content
+            # Extract the first meaningful sentence or phrase
+            first_sentence = ''
+            try:
+                sentences = t.split('.')
+                for sent in sentences[:3]:
+                    sent = sent.strip()
+                    # Skip common phrases
+                    if len(sent) > 20 and len(sent) < 150:
+                        if not any(skip in sent.lower() for skip in ['help scout', 'merge cube', 'merge cruise']):
+                            first_sentence = sent
+                            break
+            except:
+                pass
+            
+            # If we have a good sentence, use it; otherwise fall back to intent
+            if first_sentence and len(first_sentence) > 30:
+                label = first_sentence[:100]  # Cap at 100 chars
+            else:
+                label = intent_map.get(intent, primary_cat or 'support request')
+            
             parts = []
-            # Only surface severity for high/critical to avoid redundancy with tag chips
+            # Only add severity prefix for high/critical
             if bucket and str(bucket).lower() in ("high","critical"):
                 parts.append(str(bucket).lower())
-            parts.append(label)
+            if not first_sentence or len(first_sentence) < 30:
+                parts.append(label)
             if platform:
                 parts.append(f"on {platform}")
             if appv:
