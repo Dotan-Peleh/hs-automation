@@ -597,8 +597,13 @@ const Dashboard = () => {
                               );
                             })}
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-600">
+                        <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
                           {r.customer_name && <span>👤 {r.customer_name}</span>}
+                          {r.distinct_id && (
+                            <span className="px-2 py-0.5 rounded bg-gray-100 font-mono text-gray-800">
+                              ID: {r.distinct_id}
+                            </span>
+                          )}
                           {r.entities?.platform && <span>📱 {r.entities.platform}</span>}
                           {r.entities?.app_version && <span>🔢 v{r.entities.app_version}</span>}
                           {r.updated_at && <span>🕐 {new Date(r.updated_at).toLocaleString()}</span>}
@@ -974,6 +979,11 @@ const Dashboard = () => {
                       )}
                       <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
                         {r.customer_name && <span>👤 {r.customer_name}</span>}
+                        {r.distinct_id && (
+                          <span className="px-2 py-0.5 rounded bg-gray-100 font-mono text-gray-800">
+                            ID: {r.distinct_id}
+                          </span>
+                        )}
                         {r.entities?.platform && <span>📱 {r.entities.platform}</span>}
                         {r.entities?.app_version && <span>🔢 v{r.entities.app_version}</span>}
                         {r.updated_at && <span>🕐 {new Date(r.updated_at).toLocaleString()}</span>}

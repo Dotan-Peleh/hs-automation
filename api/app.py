@@ -749,6 +749,10 @@ def insights(
         # Domain-specific keyword: flowers
         if "flowers" in t or "flower" in t:
             tags.append("flowers")
+        # Content/features disappeared (NOT purchase - could be tasks, levels, items)
+        if any(k in t for k in ("daily tasks disappeared", "tasks disappeared", "disappeared", "things disappeared", "features disappeared", "content disappeared")):
+            tags.append("tag:content_missing")
+            tags.append("intent:bug_report")
         # Item disappeared / progress lost / restart prompts
         if any(k in t for k in ("item disappeared", "item gone", "lost item", "missing item", "inventory missing")):
             tags.append("tag:item_disappeared")
