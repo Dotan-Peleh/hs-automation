@@ -587,6 +587,12 @@ def insights(
         _off = max(0, (int(page) - 1) * _ps)
         rows = q.offset(_off).limit(_ps).all()
 
+    # Get dismissed ticket IDs to filter them out
+    dismissed_ids = set()
+    with get_session() as s2:
+        dismissed = s2.query(TicketFeedback).filter(TicketFeedback.action_type.in_(['seen', 'dismissed'])).all()
+        dismissed_ids = set(fb.conversation_id for fb in dismissed)
+    
     recs = []
     cat_totals = {}
     word_counts = {}
@@ -1127,6 +1133,10 @@ def insights(
                     distinct_id = m.group(1)
             except Exception:
                 pass
+
+        # Skip dismissed/marked-as-done tickets
+        if c.id in dismissed_ids:
+            continue
 
         recs.append({
             "id": c.id,
