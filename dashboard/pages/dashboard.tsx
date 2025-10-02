@@ -556,8 +556,44 @@ const Dashboard = () => {
                         </div>
                         <div className="text-sm font-semibold text-gray-900 mb-1">{r.subject || 'No subject'}</div>
                         {r.one_liner && (
-                          <div className="text-xs text-gray-700 mb-2">{r.one_liner}</div>
+                          <div className="text-xs text-gray-700 mb-1">{r.one_liner}</div>
                         )}
+                        {r.escalation_reason && (
+                          <div className="text-xs font-semibold text-red-700 mb-2 px-2 py-1 bg-red-50 rounded border border-red-200 inline-block">
+                            {r.escalation_reason}
+                          </div>
+                        )}
+                        {/* Show tags in priority section */}
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {(r.suggested_tags || [])
+                            .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:'))
+                            .slice(0, 6)
+                            .map((t: string) => {
+                              const lower = t.toLowerCase();
+                              let color = 'bg-gray-100 text-gray-700';
+                              let label = t;
+                              
+                              if (lower.includes('crash')) {
+                                color = 'bg-red-100 text-red-800 border border-red-300';
+                                label = '🔥 Crash';
+                              } else if (lower.includes('freeze')) {
+                                color = 'bg-cyan-100 text-cyan-800 border border-cyan-300';
+                                label = '❄️ Freeze';
+                              } else if (lower.includes('item') && lower.includes('stuck')) {
+                                color = 'bg-rose-100 text-rose-800 border border-rose-300';
+                                label = '🎯 Item Stuck';
+                              } else if (lower.includes('progress') || lower.includes('lost')) {
+                                color = 'bg-purple-100 text-purple-800 border border-purple-300';
+                                label = '💾 Progress Lost';
+                              }
+                              
+                              return (
+                                <span key={t} className={`px-2 py-0.5 rounded-full text-xs ${color}`}>
+                                  {label}
+                                </span>
+                              );
+                            })}
+                        </div>
                         <div className="flex items-center gap-3 text-xs text-gray-600">
                           {r.customer_name && <span>👤 {r.customer_name}</span>}
                           {r.entities?.platform && <span>📱 {r.entities.platform}</span>}
