@@ -1171,7 +1171,22 @@ def insights(
     global_summary = ""
     if int(page) == 1 and recs:
         try:
-            global_summary = llm.get_global_summary(recs)
+            if llm.is_enabled():
+                global_summary = llm.get_global_summary(recs)
+            else:
+                # Simple summary without LLM
+                total_tickets = len(recs)
+                high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
+                intents = {}
+                for r in recs:
+                    intent = r.get('intent', 'unknown')
+                    intents[intent] = intents.get(intent, 0) + 1
+                top_intent = max(intents.items(), key=lambda x: x[1])[0] if intents else 'none'
+                
+                if high_critical > 0:
+                    global_summary = f"⚠️ {high_critical} high/critical issues need attention out of {total_tickets} total tickets. Most common: {top_intent.replace('_', ' ')}."
+                else:
+                    global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent.replace('_', ' ')} requests."
         except Exception:
             pass # Fail gracefully
             
