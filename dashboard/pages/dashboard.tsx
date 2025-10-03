@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Calendar, TrendingUp, AlertTriangle, Bug, Zap, Monitor, Mail, Filter, Activity, AlertCircle, CheckCircle, Clock } from 'lucide-react';
-
-// Generate mock data
+// Trigger new build
 const generateMockData = () => {
   const categories = ['Bug', 'Crash', 'UX Issue', 'Performance', 'Technical', 'Question', 'Feature Request'];
   const platforms = ['PC', 'PlayStation', 'Xbox', 'Mobile', 'Switch'];
@@ -142,6 +141,7 @@ const Dashboard = () => {
   const [toastMsg, setToastMsg] = useState<string>('');
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [feedbackTicket, setFeedbackTicket] = useState<any>(null);
+  const [globalSummary, setGlobalSummary] = useState('');
 
   // Remove mock injection; rely on live data only
 
@@ -268,6 +268,9 @@ const Dashboard = () => {
             analysis.replied_count = j.replied_count || 0;
             analysis.unreplied_count = j.unreplied_count || 0;
             setIssueAnalysis(analysis);
+            if (j.global_summary) {
+              setGlobalSummary(j.global_summary);
+            }
           }
           const batch: any[] = j.recommendations || [];
           if (!batch.length) break;
@@ -492,6 +495,14 @@ const Dashboard = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Game Support Dashboard</h1>
         <p className="text-gray-600">Monitor and analyze user feedback trends from support emails</p>
       </div>
+
+      {/* Global Summary */}
+      {globalSummary && (
+        <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+          <h3 className="text-sm font-bold text-yellow-800 mb-1">💡 AI Summary</h3>
+          <p className="text-sm text-yellow-900">{globalSummary}</p>
+        </div>
+      )}
       
       {/* Filters Bar */}
       {/* Filters/Export bar removed per request */}
