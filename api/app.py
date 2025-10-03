@@ -455,11 +455,13 @@ def insights(
             except Exception:
                 pass
         q = q.order_by(HsConversation.updated_at.desc())
-        # Get dismissed ticket IDs to filter them out
-        dismissed = s.query(TicketFeedback).filter(TicketFeedback.action_type.in_(['seen', 'dismissed'])).all()
+        # Get dismissed ticket IDs to filter them out (including 'done' tickets)
+        dismissed = s.query(TicketFeedback).filter(
+            TicketFeedback.action_type.in_(['seen', 'dismissed', 'done'])
+        ).all()
         dismissed_ids = [fb.conversation_id for fb in dismissed]
         
-        # Exclude dismissed tickets from the query
+        # Exclude dismissed tickets from the query BEFORE pagination
         if dismissed_ids:
             q = q.filter(HsConversation.id.notin_(dismissed_ids))
             
@@ -480,10 +482,12 @@ def insights(
         _off = max(0, (int(page) - 1) * _ps)
         rows = q.offset(_off).limit(_ps).all()
 
-    # Get dismissed ticket IDs to filter them out
+    # Get dismissed ticket IDs to filter them out (including 'done' tickets)
     dismissed_ids = set()
     with get_session() as s2:
-        dismissed = s2.query(TicketFeedback).filter(TicketFeedback.action_type.in_(['seen', 'dismissed'])).all()
+        dismissed = s2.query(TicketFeedback).filter(
+            TicketFeedback.action_type.in_(['seen', 'dismissed', 'done'])
+        ).all()
         dismissed_ids = set(fb.conversation_id for fb in dismissed)
 
     recs = []
@@ -1008,26 +1012,43 @@ def insights(
         # Generate meaningful one-liner description
         one_liner = build_one_liner(raw, entities, cats, extra, bucket, intent_injected)
         
-        # If one-liner is empty or too generic, create a better one
+        # If one-liner is empty or too generic, create a better one from actual message content
         if not one_liner or len(one_liner.strip()) < 10 or one_liner.strip() in ['support request', 'bug/crash report', 'support']:
-            # Extract key issue from the actual message content
-            text_preview = (c.last_text or c.subject or '').strip()
-            if len(text_preview) > 20:
-                # Clean up and extract main issue
-                lines = text_preview.split('\n')
-                for line in lines[:3]:
+            # Extract key issue from the ACTUAL MESSAGE CONTENT
+            message_content = (c.last_text or c.subject or '').strip()
+            if len(message_content) > 20:
+                # Clean up and extract main issue from real user message
+                lines = message_content.split('\n')
+                for line in lines[:5]:  # Check more lines
                     line = line.strip()
-                    if len(line) > 15 and len(line) < 150:
-                        # Skip metadata lines
-                        if not any(skip in line.lower() for skip in ['userid', 'device =', 'os =', 'much regards', 'google play console']):
+                    if len(line) > 20 and len(line) < 200:  # More lenient length
+                        # Skip metadata/boilerplate but keep real issues
+                        if not any(skip in line.lower() for skip in [
+                            'userid', 'device =', 'os =', 'much regards', 'google play console',
+                            'font-family', 'aptos', 'msfontservice', 'div style', '<br>', '</div>',
+                            'roboto', 'arial', 'helvetica', 'sans-serif'
+                        ]):
                             one_liner = line
                             break
+                
+                # If still no good description, look for problem keywords specifically
+                if not one_liner or len(one_liner.strip()) < 15:
+                    problem_indicators = ['disappeared', 'missing', 'not working', 'crash', 'freeze', 'stuck', 'problem', 'issue', 'bug', 'error', 'broken', 'won\'t', 'can\'t', 'cannot', 'help', 'please']
+                    for line in lines[:5]:
+                        line = line.strip()
+                        if len(line) > 15 and any(word in line.lower() for word in problem_indicators):
+                            # Clean HTML and extract meaningful part
+                            clean_line = _re.sub(r'<[^>]+>', '', line)  # Remove HTML
+                            clean_line = _re.sub(r'\s+', ' ', clean_line).strip()  # Normalize spaces
+                            if len(clean_line) > 15:
+                                one_liner = clean_line[:150]  # Truncate if too long
+                                break
             
-            # Ultimate fallback based on intent and platform
+            # Ultimate fallback - but make it more descriptive
             if not one_liner or len(one_liner.strip()) < 10:
                 platform_text = f" on {entities.get('platform', 'mobile')}" if entities.get('platform') else ''
                 intent_text = intent_val.replace('_', ' ') if intent_val else 'support request'
-                one_liner = f"{intent_text.title()}{platform_text}"
+                one_liner = f"{intent_text.title()}{platform_text} - needs review"
         # best-effort: fetch customer name for display
         customer_name = None
         try:
