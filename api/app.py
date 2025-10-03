@@ -598,7 +598,7 @@ def insights(
         elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
             # Make sure it's not just mentioning login in passing
             if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
-            tags.append("intent:account_access")
+                tags.append("intent:account_access")
         if any(k in t for k in ("delete my account", "delete account", "remove my data", "erase my data", "gdpr", "ccpa")):
             tags.append("intent:account_deletion")
         # Store login issues (specific pattern from Google Play Console / App Store)
