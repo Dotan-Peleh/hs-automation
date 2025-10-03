@@ -356,48 +356,73 @@ const Dashboard = () => {
     let pollInterval: NodeJS.Timeout | null = null;
 
     const refreshTickets = async () => {
-            try {
-              const res = await fetch(`${base}/admin/insights?hours=12&limit=20&page=1`);
+      try {
+        console.log('🔄 Polling for new tickets...');
+        const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1`);
               if (res.ok) {
                 const j = await res.json();
                 const batch: any[] = j.recommendations || [];
+          console.log(`📥 Received ${batch.length} tickets from API`);
+          
                 setInsightRecs((cur) => {
             if (!Array.isArray(cur)) cur = [];
             const seen = new Set(cur.map((x: any) => x?.id).filter(Boolean));
-            const newOnes = batch.filter((x: any) => x?.id && !seen.has(x.id)).map((x: any) => ({ ...x, __new: true }));
+            const newOnes = batch.filter((x: any) => x?.id && !seen.has(x.id));
+            
+            console.log(`🆕 Found ${newOnes.length} new tickets`);
+            
             if (newOnes.length > 0) {
-              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS`);
-              setTimeout(() => setToastMsg(''), 5000);
+              // Mark as new for highlighting
+              const markedNew = newOnes.map((x: any) => ({ ...x, __new: true }));
+              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS RECEIVED`);
+              setTimeout(() => setToastMsg(''), 8000);
+              
+              // Scroll to top to show new tickets
                 setTimeout(() => {
                 if (typeof window !== 'undefined') {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
-              }
+                }
               }, 100);
+              
+              // Merge new tickets at the top
+              const merged = [...markedNew, ...cur].slice(0, 200);
+              
+              // Save to localStorage
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('insightRecs', JSON.stringify(merged));
+            } catch {}
           }
-            const merged = [...newOnes, ...cur].slice(0, 200);
-            // Save to localStorage
-            if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem('insightRecs', JSON.stringify(merged));
-        } catch {}
+              
+              return merged;
+            } else {
+              // No new tickets, just return current with fresh data
+              const updatedItems = batch.map(newItem => {
+                const existing = cur.find(x => x?.id === newItem.id);
+                return existing ? { ...existing, ...newItem } : newItem;
+              });
+              return updatedItems.slice(0, 200);
             }
-            return merged;
           });
-          // Clear "new" badges after 10 seconds
+          
+          // Clear "new" badges after 15 seconds
           setTimeout(() => {
             setInsightRecs((cur) => {
               if (!Array.isArray(cur)) return cur;
               return cur.map((x: any) => ({ ...x, __new: false }));
             });
-          }, 10000);
+          }, 15000);
+        } else {
+          console.warn('Failed to fetch tickets:', res.status, res.statusText);
         }
       } catch (err) {
-        console.warn('Failed to refresh tickets:', err);
+        console.error('❌ Failed to refresh tickets:', err);
       }
     };
 
-    // Start polling every 30 seconds
-    pollInterval = setInterval(refreshTickets, 30000);
+    // Start aggressive polling every 10 seconds for new tickets
+    pollInterval = setInterval(refreshTickets, 10000);
+    console.log('⏱️ Started polling every 10 seconds for new tickets');
     
     // Initial load
     refreshTickets();
@@ -408,6 +433,33 @@ const Dashboard = () => {
       }
     };
   }, []);
+
+  // Manual refresh function for immediate updates
+  const manualRefresh = async () => {
+    setToastMsg('🔄 Checking for new tickets...');
+    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+    try {
+      const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1&_t=${Date.now()}`);
+      if (res.ok) {
+        const j = await res.json();
+        const batch: any[] = j.recommendations || [];
+        setInsightRecs(batch);
+        setToastMsg(`✅ Refreshed - ${batch.length} tickets loaded`);
+        setTimeout(() => setToastMsg(''), 3000);
+        
+        // Save to localStorage
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('insightRecs', JSON.stringify(batch));
+          } catch {}
+        }
+      }
+    } catch (err) {
+      setToastMsg('❌ Refresh failed');
+      setTimeout(() => setToastMsg(''), 3000);
+      console.error('Manual refresh failed:', err);
+    }
+  };
 
   // Calculate summary stats
   const summaryStats = useMemo(() => {
@@ -563,8 +615,47 @@ const Dashboard = () => {
       )}
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">🎮 Game Support Dashboard</h1>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">🎮 Game Support Dashboard</h1>
         <p className="text-gray-600">Monitor and analyze user feedback trends from support emails</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={manualRefresh}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-semibold"
+              title="Manually check for new tickets from Help Scout"
+            >
+              🔄 Refresh Now
+            </button>
+            <button
+              onClick={async () => {
+                setToastMsg('🔎 Fetching latest from Help Scout...');
+                try {
+                  const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+                  const res = await fetch(`${base}/admin/backfill`, { method: 'POST' });
+                  if (res.ok) {
+                    const result = await res.json();
+                    setToastMsg(`✅ Fetched ${result.saved || 0} new tickets from Help Scout`);
+                    setTimeout(() => setToastMsg(''), 5000);
+                    // Refresh dashboard after backfill
+                    setTimeout(manualRefresh, 1000);
+                  } else {
+                    setToastMsg('❌ Failed to fetch from Help Scout');
+                    setTimeout(() => setToastMsg(''), 3000);
+                  }
+                } catch (err) {
+                  setToastMsg('❌ Backfill failed');
+                  setTimeout(() => setToastMsg(''), 3000);
+                }
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 font-semibold"
+              title="Force fetch new tickets from Help Scout API"
+            >
+              🔎 Fetch New
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Global Summary */}
