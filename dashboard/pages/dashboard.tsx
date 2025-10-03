@@ -1125,14 +1125,33 @@ const Dashboard = () => {
                             {r.similar_count} similar
                       </span>
                         )}
-                        {/* Show Help Scout tags first, then suggested tags */}
+                        {/* Show sentiment tag first if exists */}
+                        {(r.suggested_tags || []).filter((t: string) => t.startsWith('sentiment:')).map((t: string) => {
+                          const sentiment = t.split(':')[1];
+                          const sentimentColors = {
+                            'compliment': 'bg-green-100 text-green-800 border-green-300',
+                            'issue': 'bg-orange-100 text-orange-800 border-orange-300',
+                            'mixed': 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                          };
+                          const sentimentIcons = {
+                            'compliment': '👍',
+                            'issue': '⚠️',
+                            'mixed': '🤔'
+                          };
+                          return (
+                            <span key={t} className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${sentimentColors[sentiment as keyof typeof sentimentColors] || 'bg-gray-100 text-gray-800 border-gray-300'}`}>
+                              {sentimentIcons[sentiment as keyof typeof sentimentIcons] || '📝'} {sentiment}
+                            </span>
+                          );
+                        })}
+                        {/* Show Help Scout tags */}
                         {(r.existing_tags || []).slice(0, 3).map((t: string) => (
                           <span key={`hs-${t}`} className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                             🏷️ {t}
-                      </span>
-                    ))}
+                          </span>
+                        ))}
                     {(r.suggested_tags || [])
-                          .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:'))
+                          .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:') && !t.startsWith('sentiment:'))
                           .slice(0, 6)
                       .map((t: string) => {
                             const lower = t.toLowerCase();

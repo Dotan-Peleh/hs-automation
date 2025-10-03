@@ -641,10 +641,48 @@ def insights(
 
     import re
 
+    def detect_sentiment(text: str) -> str:
+        """Detect if feedback is positive (compliment) or negative (issue)"""
+        t = text.lower()
+        
+        # Compliment/positive indicators
+        compliments = [
+            'love', 'great', 'awesome', 'amazing', 'fantastic', 'excellent', 'perfect',
+            'fun', 'enjoy', 'like', 'best', 'favorite', 'good', 'nice', 'cool', 'thank'
+        ]
+        # Issue/negative indicators  
+        issues = [
+            'however', 'but', 'unfortunately', 'problem', 'issue', 'bug', 'broken',
+            'irritating', 'annoying', 'frustrating', 'ridiculous', 'terrible', 'bad',
+            'worst', 'hate', 'disappointed', 'crash', 'freeze', 'stuck', 'won\'t',
+            'can\'t', 'cannot', 'doesn\'t', 'not working', 'too many', 'too much'
+        ]
+        
+        compliment_count = sum(1 for word in compliments if word in t)
+        issue_count = sum(1 for word in issues if word in t)
+        
+        # If message has both compliment and issue, it's mixed feedback
+        if compliment_count > 0 and issue_count > 0:
+            return 'mixed'
+        elif compliment_count > issue_count:
+            return 'positive'
+        elif issue_count > 0:
+            return 'negative'
+        return 'neutral'
+    
     def derive_custom_tags(text: str, entities: dict, cats: list[str] | None, extra: dict | None) -> list[str]:
         t = (text or '').lower()
         tags: list[str] = []
         # Intent detection (high-level user intent)
+        
+        # Sentiment tagging for feedback
+        sentiment = detect_sentiment(text)
+        if sentiment == 'positive':
+            tags.append('sentiment:compliment')
+        elif sentiment == 'negative':
+            tags.append('sentiment:issue')
+        elif sentiment == 'mixed':
+            tags.append('sentiment:mixed')
         
         # PRIORITY 1: Beta feedback / reviews / opinions (CHECK FIRST!)
         # These should ALWAYS be LOW priority, even if they mention bugs/crashes
@@ -1096,18 +1134,41 @@ def insights(
                             one_liner = line
                             break
                 
-                # If still no good description, look for problem keywords specifically
+                # If still no good description, extract actual feedback content
                 if not one_liner or len(one_liner.strip()) < 15:
-                    problem_indicators = ['disappeared', 'missing', 'not working', 'crash', 'freeze', 'stuck', 'problem', 'issue', 'bug', 'error', 'broken', 'won\'t', 'can\'t', 'cannot', 'help', 'please']
-                    for line in lines[:5]:
+                    # Look for actual user feedback (beta feedback, reviews, comments)
+                    feedback_indicators = [
+                        'beta feedback', 'new beta feedback', 'user wrote', 'feedback:', 
+                        'review:', 'comment:', 'however', 'but', 'unfortunately'
+                    ]
+                    problem_indicators = [
+                        'disappeared', 'missing', 'not working', 'crash', 'freeze', 'stuck', 
+                        'problem', 'issue', 'bug', 'error', 'broken', 'won\'t', 'can\'t', 'cannot',
+                        'irritating', 'annoying', 'frustrating', 'ridiculously', 'too many', 'pop up'
+                    ]
+                    
+                    for line in lines[:10]:  # Check more lines for beta feedback
                         line = line.strip()
-                        if len(line) > 15 and any(word in line.lower() for word in problem_indicators):
-                            # Clean HTML and extract meaningful part
-                            clean_line = _re.sub(r'<[^>]+>', '', line)  # Remove HTML
-                            clean_line = _re.sub(r'\s+', ' ', clean_line).strip()  # Normalize spaces
-                            if len(clean_line) > 15:
-                                one_liner = clean_line[:150]  # Truncate if too long
-                                break
+                        
+                        # Clean HTML first
+                        clean_line = _re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
+                        clean_line = _re.sub(r'\s+', ' ', clean_line).strip()  # Normalize spaces
+                        
+                        # Check if this line has actual feedback content
+                        if len(clean_line) > 20 and len(clean_line) < 250:
+                            # Prioritize lines with feedback indicators or problem words
+                            has_feedback = any(indicator in clean_line.lower() for indicator in feedback_indicators)
+                            has_problem = any(word in clean_line.lower() for word in problem_indicators)
+                            
+                            if has_feedback or has_problem:
+                                # Extract the meaningful part
+                                # Remove common prefixes
+                                clean_line = _re.sub(r'^(hello,?|hi,?|dear,?|sincerely,?|regards,?|thank you,?)\\s*', '', clean_line, flags=_re.IGNORECASE)
+                                clean_line = _re.sub(r'^(we wanted to let you know that|a user wrote|new beta feedback for your app)\\s*', '', clean_line, flags=_re.IGNORECASE)
+                                
+                                if len(clean_line) > 15:
+                                    one_liner = clean_line[:150]  # Truncate if too long
+                                    break
             
             # Ultimate fallback - but make it more descriptive
             if not one_liner or len(one_liner.strip()) < 10:
