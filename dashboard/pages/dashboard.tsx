@@ -1144,7 +1144,6 @@ const Dashboard = () => {
             </div>
               );
             }).filter(Boolean) : <div className="text-gray-500">Loading tickets...</div>}
-            })}
         </div>
       </div>
 
