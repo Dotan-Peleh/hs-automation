@@ -285,7 +285,7 @@ async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
             # raise HTTPException(status_code=401, detail="Invalid HS signature")
 
     try:
-        payload = await req.json()
+    payload = await req.json()
     except Exception:
         return {"ok": True} # Ignore malformed JSON
 
@@ -598,7 +598,7 @@ def insights(
         elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
             # Make sure it's not just mentioning login in passing
             if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
-                tags.append("intent:account_access")
+            tags.append("intent:account_access")
         if any(k in t for k in ("delete my account", "delete account", "remove my data", "erase my data", "gdpr", "ccpa")):
             tags.append("intent:account_deletion")
         # Store login issues (specific pattern from Google Play Console / App Store)
@@ -796,14 +796,40 @@ def insights(
             # Extract the first meaningful sentence or phrase
             first_sentence = ''
             try:
-                sentences = t.split('.')
-                for sent in sentences[:3]:
+                # Try multiple extraction methods
+                text_clean = t.replace('\n', ' ').strip()
+                
+                # Method 1: Look for complete sentences
+                sentences = text_clean.split('.')
+                for sent in sentences[:5]:
                     sent = sent.strip()
-                    # Skip common phrases
-                    if len(sent) > 20 and len(sent) < 150:
-                        if not any(skip in sent.lower() for skip in ['help scout', 'merge cube', 'merge cruise']):
+                    if len(sent) > 25 and len(sent) < 200:
+                        # Skip boilerplate
+                        if not any(skip in sent.lower() for skip in ['help scout', 'merge cube', 'merge cruise', 'google play console', 'userid', 'device =', 'os =']):
                             first_sentence = sent
                             break
+                
+                # Method 2: If no good sentence, extract key phrases
+                if not first_sentence and len(text_clean) > 10:
+                    # Look for problem descriptions
+                    problem_words = ['disappeared', 'missing', 'not working', 'crash', 'freeze', 'stuck', 'problem', 'issue', 'bug', 'error']
+                    lines = text_clean.split('\n')
+                    for line in lines[:3]:
+                        line = line.strip()
+                        if len(line) > 15 and len(line) < 150:
+                            if any(word in line.lower() for word in problem_words):
+                                first_sentence = line
+                                break
+                
+                # Method 3: Fallback to first substantial line
+                if not first_sentence:
+                    lines = text_clean.split('\n')
+                    for line in lines[:3]:
+                        line = line.strip()
+                        if len(line) > 10 and len(line) < 100:
+                            if not any(skip in line.lower() for skip in ['userid', 'device', 'os =', 'much regards']):
+                                first_sentence = line
+                                break
             except:
                 pass
             
@@ -811,14 +837,14 @@ def insights(
             if first_sentence and len(first_sentence) > 30:
                 label = first_sentence[:100]  # Cap at 100 chars
             else:
-                label = intent_map.get(intent, primary_cat or 'support request')
+            label = intent_map.get(intent, primary_cat or 'support request')
             
             parts = []
             # Only add severity prefix for high/critical
             if bucket and str(bucket).lower() in ("high","critical"):
                 parts.append(str(bucket).lower())
             if not first_sentence or len(first_sentence) < 30:
-                parts.append(label)
+            parts.append(label)
             if appv:
                 parts.append(f"v{appv}")
             if isinstance(lvl, int):
@@ -978,7 +1004,29 @@ def insights(
         suggested_tags = [f"sev:{bucket}"] + custom_wo_intent
         # pass intent back into one-liner context (not as a tag to UI)
         intent_injected = suggested_tags + ([f"intent:{intent_val}"] if intent_val else [])
+        # Generate meaningful one-liner description
         one_liner = build_one_liner(raw, entities, cats, extra, bucket, intent_injected)
+        
+        # If one-liner is empty or too generic, create a better one
+        if not one_liner or len(one_liner.strip()) < 10 or one_liner.strip() in ['support request', 'bug/crash report', 'support']:
+            # Extract key issue from the actual message content
+            text_preview = (c.last_text or c.subject or '').strip()
+            if len(text_preview) > 20:
+                # Clean up and extract main issue
+                lines = text_preview.split('\n')
+                for line in lines[:3]:
+                    line = line.strip()
+                    if len(line) > 15 and len(line) < 150:
+                        # Skip metadata lines
+                        if not any(skip in line.lower() for skip in ['userid', 'device =', 'os =', 'much regards', 'google play console']):
+                            one_liner = line
+                            break
+            
+            # Ultimate fallback based on intent and platform
+            if not one_liner or len(one_liner.strip()) < 10:
+                platform_text = f" on {entities.get('platform', 'mobile')}" if entities.get('platform') else ''
+                intent_text = intent_val.replace('_', ' ') if intent_val else 'support request'
+                one_liner = f"{intent_text.title()}{platform_text}"
         # best-effort: fetch customer name for display
         customer_name = None
         try:
