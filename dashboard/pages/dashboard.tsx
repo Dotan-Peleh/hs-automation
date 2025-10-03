@@ -137,25 +137,30 @@ const Dashboard = () => {
   const [insightsCats, setInsightsCats] = useState<any[]>([]);
   const [insightsWords, setInsightsWords] = useState<any[]>([]);
   const [issueAnalysis, setIssueAnalysis] = useState<any | null>(null);
-  // Preserve state across refreshes using localStorage
-  const [insightRecs, setInsightRecs] = useState<any[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('insightRecs');
-        return saved ? JSON.parse(saved) : [];
-      } catch { return []; }
-    }
-    return [];
-  });
+  // Safe state initialization to prevent React errors
+  const [insightRecs, setInsightRecs] = useState<any[]>([]);
   const [toastMsg, setToastMsg] = useState<string>('');
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [feedbackTicket, setFeedbackTicket] = useState<any>(null);
-  const [globalSummary, setGlobalSummary] = useState<string>(() => {
+  const [globalSummary, setGlobalSummary] = useState<string>('');
+  
+  // Load from localStorage after component mounts
+  useEffect(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('globalSummary') || '';
+      try {
+        const savedRecs = localStorage.getItem('insightRecs');
+        if (savedRecs) {
+          setInsightRecs(JSON.parse(savedRecs));
+        }
+        const savedSummary = localStorage.getItem('globalSummary');
+        if (savedSummary) {
+          setGlobalSummary(savedSummary);
+        }
+      } catch (error) {
+        console.warn('Failed to load from localStorage:', error);
+      }
     }
-    return '';
-  });
+  }, []);
 
   // Remove mock injection; rely on live data only
 
@@ -295,7 +300,11 @@ const Dashboard = () => {
             setIssueAnalysis(analysis);
             if (j.global_summary) {
               setGlobalSummary(j.global_summary);
-              localStorage.setItem('globalSummary', j.global_summary);
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('globalSummary', j.global_summary);
+                } catch {}
+              }
             }
           }
           const batch: any[] = j.recommendations || [];
@@ -323,7 +332,11 @@ const Dashboard = () => {
               });
               const result = [...newItems, ...updatedItems].sort((a,b) => (b.number||0)-(a.number||0));
               // Save to localStorage for persistence
-              localStorage.setItem('insightRecs', JSON.stringify(result.slice(0, 100))); // Keep last 100
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('insightRecs', JSON.stringify(result.slice(0, 100)));
+                } catch {}
+              }
               return result;
             });
           }
@@ -337,45 +350,63 @@ const Dashboard = () => {
     return () => { cancelled = true; };
   }, []);
   
-  // Real-time: subscribe to server-sent events and refresh newest items
+  // Simple polling for real-time updates (avoiding SSE complexity)
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource(base + '/admin/events');
-      es.onmessage = async (ev) => {
-        try {
-          const e = JSON.parse(ev.data || '{}');
-          if (e && e.type === 'new_message') {
-            setToastMsg(`🔔 NEW MESSAGE #${e.number || e.conv_id}: ${e.subject || 'No subject'}`);
-            setTimeout(() => setToastMsg(''), 8000);
-            // fetch the freshest page and merge (dedupe by id)
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    const refreshTickets = async () => {
             try {
               const res = await fetch(`${base}/admin/insights?hours=12&limit=20&page=1`);
               if (res.ok) {
                 const j = await res.json();
                 const batch: any[] = j.recommendations || [];
                 setInsightRecs((cur) => {
-                  const seen = new Set((cur || []).map((x: any) => x.id));
-                  const newOnes = batch.filter((x: any) => !seen.has(x.id)).map((x: any) => ({ ...x, __new: true }));
-                  const merged = [...newOnes, ...(cur || [])];
-                  // Scroll to top to show new message
-                  if (newOnes.length > 0) {
-                    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
-                  }
-                  return merged.slice(0, 200);
-                });
-                // auto-clear the "New" badge after 10 seconds
+            if (!Array.isArray(cur)) cur = [];
+            const seen = new Set(cur.map((x: any) => x?.id).filter(Boolean));
+            const newOnes = batch.filter((x: any) => x?.id && !seen.has(x.id)).map((x: any) => ({ ...x, __new: true }));
+            if (newOnes.length > 0) {
+              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS`);
+              setTimeout(() => setToastMsg(''), 5000);
                 setTimeout(() => {
-                  setInsightRecs((cur) => (cur || []).map((x: any) => ({ ...x, __new: false })));
-                }, 10000);
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
               }
-            } catch {}
+              }, 100);
           }
+            const merged = [...newOnes, ...cur].slice(0, 200);
+            // Save to localStorage
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('insightRecs', JSON.stringify(merged));
         } catch {}
-      };
-    } catch {}
-    return () => { try { es && es.close(); } catch {} };
+            }
+            return merged;
+          });
+          // Clear "new" badges after 10 seconds
+          setTimeout(() => {
+            setInsightRecs((cur) => {
+              if (!Array.isArray(cur)) return cur;
+              return cur.map((x: any) => ({ ...x, __new: false }));
+            });
+          }, 10000);
+        }
+      } catch (err) {
+        console.warn('Failed to refresh tickets:', err);
+      }
+    };
+
+    // Start polling every 30 seconds
+    pollInterval = setInterval(refreshTickets, 30000);
+    
+    // Initial load
+    refreshTickets();
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
   }, []);
 
   // Calculate summary stats
@@ -932,14 +963,15 @@ const Dashboard = () => {
                   </div>
                   <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
                   <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            ))}
+                </div>
+              ))}
             </div>
           )}
-          {insightRecs
-            .filter((x:any)=>!x.__loading)
-            .sort((a:any,b:any)=> (b.number||0)-(a.number||0))
+          {Array.isArray(insightRecs) ? insightRecs
+            .filter((x:any)=>x && !x.__loading)
+            .sort((a:any,b:any)=> (b?.number||0)-(a?.number||0))
             .map((r: any) => {
+              if (!r) return null;
               const intentTag = (r.suggested_tags || []).find((t: string) => t.startsWith('intent:'));
               const intent = intentTag ? intentTag.split(':')[1] : '';
               
@@ -1006,12 +1038,12 @@ const Dashboard = () => {
                         {(r.existing_tags || []).slice(0, 3).map((t: string) => (
                           <span key={`hs-${t}`} className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                             🏷️ {t}
-                          </span>
-                        ))}
-                        {(r.suggested_tags || [])
+                      </span>
+                    ))}
+                    {(r.suggested_tags || [])
                           .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:'))
                           .slice(0, 6)
-                          .map((t: string) => {
+                      .map((t: string) => {
                             const lower = t.toLowerCase();
                             let color = 'bg-gray-100 text-gray-700 border border-gray-200';
                             let label = t;
@@ -1111,6 +1143,7 @@ const Dashboard = () => {
               </div>
             </div>
               );
+            }).filter(Boolean) : <div className="text-gray-500">Loading tickets...</div>}
             })}
         </div>
       </div>
