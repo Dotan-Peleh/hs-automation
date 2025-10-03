@@ -46,32 +46,86 @@ import asyncio
 _subscribers: list[asyncio.Queue] = []
 
 def _publish_event(ev: dict):
+    """Publish event to all SSE subscribers"""
     try:
+        import json
+        event_data = json.dumps(ev)
         for q in list(_subscribers):
             try:
-                q.put_nowait(ev)
+                q.put_nowait(event_data)
             except Exception:
-                pass
-    except Exception:
-        pass
+                # Remove dead subscribers
+                try:
+                    _subscribers.remove(q)
+                except:
+                    pass
+    except Exception as e:
+        print(f"ERROR: Failed to publish event: {e}")
 
 @app.get("/admin/events")
 async def events_stream():
+    """Server-Sent Events endpoint for real-time dashboard updates"""
+    from fastapi.responses import StreamingResponse
+    
     async def event_gen():
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
         _subscribers.append(q)
+        print(f"🔌 New SSE subscriber connected. Total: {len(_subscribers)}")
+        
         try:
+            # Send initial connection event
+            import json
+            yield f"data: {json.dumps({'type': 'connected', 'timestamp': time.time()})}\n\n"
+            
             while True:
-                ev = await q.get()
-                yield f"data: {ev}\n\n"
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=30.0)
+                    yield f"data: {ev}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive every 30 seconds
+                    yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time()})}\n\n"
         except asyncio.CancelledError:
             pass
         finally:
             try:
                 _subscribers.remove(q)
-            except Exception:
+                print(f"🔌 SSE subscriber disconnected. Total: {len(_subscribers)}")
+            except:
                 pass
-    return StreamingResponse(event_gen(), media_type="text/event-stream")
+    
+    return StreamingResponse(event_gen(), media_type="text/plain")
+
+@app.get("/admin/poll")
+def poll_for_updates(since: int = 0):
+    """Polling fallback for new tickets since timestamp"""
+    try:
+        with get_session() as s:
+            # Get recent conversations updated since 'since' timestamp
+            from datetime import datetime
+            since_dt = datetime.fromtimestamp(since) if since > 0 else datetime.utcnow().replace(hour=0, minute=0, second=0)
+            
+            recent = s.query(HsConversation).filter(
+                HsConversation.updated_at >= since_dt
+            ).order_by(HsConversation.updated_at.desc()).limit(10).all()
+            
+            updates = []
+            for conv in recent:
+                updates.append({
+                    'type': 'ticket_update',
+                    'conv_id': conv.id,
+                    'number': conv.number,
+                    'subject': conv.subject,
+                    'updated_at': conv.updated_at.timestamp() if conv.updated_at else 0
+                })
+            
+            return {
+                'ok': True,
+                'updates': updates,
+                'timestamp': time.time()
+            }
+    except Exception as e:
+        print(f"ERROR: Polling failed: {e}")
+        return {'ok': False, 'error': str(e), 'updates': [], 'timestamp': time.time()}
 
 # Reply to Help Scout conversation with a templated or custom message
 @app.post("/admin/reply")
@@ -261,14 +315,18 @@ async def process_webhook_event(conv_id: int):
             upsert_hs_conversation(s, conv)
             
             # Publish event for real-time dashboard updates
+            print(f"📡 Publishing SSE event for conv_id {conv_id}, number {conv.get('number')}")
             _publish_event({
                 'type': 'new_message',
                 'conv_id': conv_id,
                 'number': conv.get('number'),
                 'subject': conv.get('subject')
             })
+            print(f"✅ SSE event published successfully")
         except Exception as e:
-            print(f"ERROR: Webhook processing failed for conv_id {conv_id}: {e}")
+            print(f"❌ ERROR: Webhook processing failed for conv_id {conv_id}: {e}")
+            import traceback
+            traceback.print_exc()
 
 @app.post("/helpscout/webhook")
 async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
@@ -298,6 +356,13 @@ async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(process_webhook_event, conv_id)
     
     return {"ok": True}
+
+@app.post("/admin/test-webhook")
+async def test_webhook(conv_id: int, background_tasks: BackgroundTasks):
+    """Test endpoint to manually trigger webhook processing"""
+    print(f"🧪 Testing webhook processing for conv_id {conv_id}")
+    background_tasks.add_task(process_webhook_event, conv_id)
+    return {"ok": True, "message": f"Webhook processing triggered for conv_id {conv_id}"}
 
 @app.get("/admin/preview")
 def admin_preview(text: str = Query("", description="text to classify")):
