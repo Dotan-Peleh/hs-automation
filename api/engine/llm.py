@@ -91,8 +91,7 @@ def get_global_summary(tickets: list[dict]) -> str:
     Highlight any widespread issues (look for high 'similar_count'), critical bugs, or emerging patterns. Be concise and action-oriented.
 
     Recent Tickets:
-    { "
-".join(ticket_previews) }
+    {chr(10).join(ticket_previews)}
 
     Summary:
     """
