@@ -377,12 +377,7 @@ const Dashboard = () => {
               setToastMsg(`🔔 ${newOnes.length} NEW TICKETS RECEIVED`);
               setTimeout(() => setToastMsg(''), 8000);
               
-              // Scroll to top to show new tickets
-                setTimeout(() => {
-                if (typeof window !== 'undefined') {
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-              }, 100);
+              // DON'T auto-scroll - let user stay where they are
               
               // Merge new tickets at the top
               const merged = [...markedNew, ...cur].slice(0, 200);
@@ -1095,16 +1090,16 @@ const Dashboard = () => {
               };
 
               return (
-                <div key={r.id} className={`border rounded-lg p-3 ${getIntentColor()} ${r.__new ? 'ring-2 ring-green-400 shadow-lg' : ''} transition-all`}>
+                <div key={r.id} className={`border rounded-lg p-3 ${getIntentColor()} ${r.__new ? 'ring-2 ring-green-400 shadow-lg' : ''} ${r.is_done ? 'opacity-60 bg-gray-50' : ''} transition-all`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        {dismissedIds.has(r.id) && (
-                          <span className="px-2 py-1 text-xs font-bold rounded-full bg-gray-400 text-white">
+                        {r.is_done && (
+                          <span className="px-2 py-1 text-xs font-bold rounded-full bg-green-600 text-white">
                             ✓ DONE
                           </span>
                         )}
-                        {r.__new && !dismissedIds.has(r.id) && (
+                        {r.__new && !r.is_done && (
                           <span className="px-2 py-1 text-xs font-bold rounded-full bg-green-500 text-white animate-pulse">
                             ✨ NEW
                         </span>

@@ -520,15 +520,13 @@ def insights(
             except Exception:
                 pass
         q = q.order_by(HsConversation.updated_at.desc())
-        # Get dismissed ticket IDs to filter them out (including 'done' tickets)
+        # Get dismissed ticket IDs but DON'T filter them out - just mark them as done
         dismissed = s.query(TicketFeedback).filter(
             TicketFeedback.action_type.in_(['seen', 'dismissed', 'done'])
         ).all()
         dismissed_ids = [fb.conversation_id for fb in dismissed]
         
-        # Exclude dismissed tickets from the query BEFORE pagination
-        if dismissed_ids:
-            q = q.filter(HsConversation.id.notin_(dismissed_ids))
+        # DON'T FILTER - we'll show them but mark as done in the response
             
         # total matching count before paging
         try:
@@ -547,7 +545,7 @@ def insights(
         _off = max(0, (int(page) - 1) * _ps)
         rows = q.offset(_off).limit(_ps).all()
 
-    # Get dismissed ticket IDs to filter them out (including 'done' tickets)
+    # Get dismissed ticket IDs but DON'T filter - just mark them visually
     dismissed_ids = set()
     with get_session() as s2:
         dismissed = s2.query(TicketFeedback).filter(
@@ -1325,6 +1323,7 @@ def insights(
             # convenient links
             "hs_link": f"https://secure.helpscout.net/conversation/{c.id}",
             "api_link": f"https://api.helpscout.net/v2/conversations/{c.id}",
+            "is_done": c.id in dismissed_ids,  # Mark as done but still show it
         })
 
     # Post-process: adjust severity by repetition and categories
