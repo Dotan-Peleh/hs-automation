@@ -38,7 +38,7 @@ try:
 except Exception as e:
     print(f"⚠️  Database table creation warning: {e}")
 
-app = FastAPI(title="HS Trends")
+app = FastAPI(title="HS Trends", version="2.0")  # Force redeploy
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_headers=["*"], allow_methods=["*"])
 
 # --- Very lightweight in‑process pubsub for real‑time notifications (dev only) ---
