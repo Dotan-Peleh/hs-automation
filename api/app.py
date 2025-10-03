@@ -642,31 +642,42 @@ def insights(
     import re
 
     def detect_sentiment(text: str) -> str:
-        """Detect if feedback is positive (compliment) or negative (issue)"""
+        """Detect if feedback is positive (compliment) or negative (issue/problem)"""
         t = text.lower()
         
-        # Compliment/positive indicators
+        # Strong issue indicators - these override any positives
+        strong_issues = [
+            'accidentally', 'accident', 'refund', 'help me', 'can you help', 'please help',
+            'i\'m sorry', 'need help', 'mistake', 'wrong', 'error', 'problem', 'issue'
+        ]
+        
+        # If it's clearly asking for help or reporting a problem, it's NOT a compliment
+        if any(phrase in t for phrase in strong_issues):
+            return 'neutral'  # Don't tag support requests as compliments
+        
+        # True compliment indicators (must be clear praise without issues)
         compliments = [
-            'love', 'great', 'awesome', 'amazing', 'fantastic', 'excellent', 'perfect',
-            'fun', 'enjoy', 'like', 'best', 'favorite', 'good', 'nice', 'cool', 'thank'
+            'love this', 'love the', 'great game', 'awesome', 'amazing game', 
+            'fantastic', 'excellent', 'perfect', 'best game', 'favorite game',
+            'really enjoy', 'enjoying', 'so much fun', 'addicted', 'can\'t stop playing'
         ]
         # Issue/negative indicators  
         issues = [
             'however', 'but', 'unfortunately', 'problem', 'issue', 'bug', 'broken',
             'irritating', 'annoying', 'frustrating', 'ridiculous', 'terrible', 'bad',
-            'worst', 'hate', 'disappointed', 'crash', 'freeze', 'stuck', 'won\'t',
-            'can\'t', 'cannot', 'doesn\'t', 'not working', 'too many', 'too much'
+            'worst', 'hate', 'disappointed', 'crash', 'freeze', 'stuck', 'won\'t work',
+            'can\'t', 'cannot', 'doesn\'t work', 'not working', 'too many', 'too much'
         ]
         
-        compliment_count = sum(1 for word in compliments if word in t)
-        issue_count = sum(1 for word in issues if word in t)
+        has_compliment = any(phrase in t for phrase in compliments)
+        has_issue = any(word in t for word in issues)
         
         # If message has both compliment and issue, it's mixed feedback
-        if compliment_count > 0 and issue_count > 0:
+        if has_compliment and has_issue:
             return 'mixed'
-        elif compliment_count > issue_count:
+        elif has_compliment:
             return 'positive'
-        elif issue_count > 0:
+        elif has_issue:
             return 'negative'
         return 'neutral'
     
@@ -1130,6 +1141,9 @@ def insights(
         if is_generic:
             # Extract key issue from the ACTUAL MESSAGE CONTENT
             message_content = (c.last_text or c.subject or '').strip()
+            print(f"DEBUG: Extracting description for #{c.number}. Content length: {len(message_content)}")
+            print(f"DEBUG: First 200 chars: {message_content[:200]}")
+            
             if len(message_content) > 20:
                 # Clean up and extract main issue from real user message
                 lines = message_content.split('\n')
@@ -1138,24 +1152,42 @@ def insights(
                 for line in lines:
                     line = line.strip()
                     
-                    # Skip obvious metadata/headers
+                    # Skip obvious metadata/headers (be very aggressive)
                     if not line or len(line) < 15:
                         continue
                     if any(skip in line.lower() for skip in [
-                        'userid', 'user id', 'distinct_id', 'device =', 'os =', 'much regards', 
-                        'sincerely', 'google play console', 'hello,', 'from noreply',
+                        'userid', 'user id', 'distinct_id', 'device =', 'os =', 'device=', 'os=',
+                        'much regards', 'sincerely', 'thank you for your help', 'thanks,',
+                        'google play console', 'hello,', 'from noreply', 'from:', 'to:',
                         'font-family', 'aptos', 'msfontservice', 'div style', '<br>', '</div>',
-                        'roboto', 'arial', 'helvetica', 'sans-serif', 'gmail.com', '@'
+                        'roboto', 'arial', 'helvetica', 'sans-serif', 'gmail.com', '@gmail',
+                        '@google.com', 'noreply', 'jessica', 'mary', 'sheryl', 'gerda',
+                        'best regards', 'kind regards', 'regards,'
                     ]):
+                        continue
+                    
+                    # Also skip if line is ALL CAPS (likely header)
+                    if line.isupper() and len(line) > 5:
                         continue
                     
                     # Clean the line
                     clean = _re.sub(r'<[^>]+>', '', line)  # Remove HTML
                     clean = _re.sub(r'\s+', ' ', clean).strip()  # Normalize whitespace
                     
-                    # Remove common email prefixes
-                    clean = _re.sub(r'^(hello,?|hi,?|dear,?|we wanted to let you know that|a user wrote new beta feedback|new beta feedback for your app)\\s*', '', clean, flags=_re.IGNORECASE)
-                    clean = clean.strip()
+                    # Remove common email prefixes and boilerplate
+                    prefixes_to_remove = [
+                        r'^(hello,?|hi,?|dear,?)\s*',
+                        r'^(we wanted to let you know that)\s*',
+                        r'^(a user wrote new beta feedback)\s*',
+                        r'^(new beta feedback for your app)\s*',
+                        r'^(you can write a private reply)\s*',
+                        r'^(on oct \d+, 20\d+ at \d+:\d+ (am|pm) gmt)\s*',
+                    ]
+                    for pattern in prefixes_to_remove:
+                        clean = _re.sub(pattern, '', clean, flags=_re.IGNORECASE)
+                        clean = clean.strip()
+                    
+                    print(f"DEBUG: Cleaned line: '{clean[:100]}...'") if len(clean) > 100 else print(f"DEBUG: Cleaned line: '{clean}'")
                     
                     # If this line has substantial content, use it
                     if len(clean) > 20 and len(clean) < 250:
@@ -1203,6 +1235,9 @@ def insights(
                 platform_text = f" on {entities.get('platform', 'mobile')}" if entities.get('platform') else ''
                 intent_text = intent_val.replace('_', ' ') if intent_val else 'support request'
                 one_liner = f"{intent_text.title()}{platform_text} - needs review"
+                print(f"WARNING: Using generic fallback for #{c.number}: '{one_liner}'")
+            else:
+                print(f"✅ Extracted real description for #{c.number}: '{one_liner[:100]}'")
         # best-effort: fetch customer name for display
         customer_name = None
         try:
