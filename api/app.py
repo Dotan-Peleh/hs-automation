@@ -292,7 +292,7 @@ async def hs_webhook(req: Request):
     try:
         helpscout.ensure_tags(conv_id, cats, sev_score, entities)
     except Exception as e:
-        # don’t fail the webhook on tag write issues
+        # don't fail the webhook on tag write issues
         pass
 
     try:
@@ -404,7 +404,7 @@ async def hs_webhook(req: Request):
             else:
                 slack.post_update(incident, cats, entities, z, cus)
     except Exception as e:
-        # don’t fail the webhook on persistence issues
+        # don't fail the webhook on persistence issues
         return {"ok": True, "stored": False}
     # auto-upsert vector for this conversation (best-effort)
     try:
@@ -570,6 +570,14 @@ def insights(
             except Exception:
                 pass
         q = q.order_by(HsConversation.updated_at.desc())
+        # Get dismissed ticket IDs to filter them out
+        dismissed = s.query(TicketFeedback).filter(TicketFeedback.action_type.in_(['seen', 'dismissed'])).all()
+        dismissed_ids = [fb.conversation_id for fb in dismissed]
+        
+        # Exclude dismissed tickets from the query
+        if dismissed_ids:
+            q = q.filter(HsConversation.id.notin_(dismissed_ids))
+            
         # total matching count before paging
         try:
             total = q.count()
@@ -1838,7 +1846,7 @@ def hs_callback(code: str | None = None, state: str | None = None):
     import requests
     from datetime import datetime, timedelta
     token_url = f"{os.getenv('HS_BASE_URL','https://api.helpscout.net/v2')}/oauth2/token"
-    # Help Scout expects client authentication via HTTP Basic auth.
+    # Help Scout expects client authentication via HTTP Basic auth.
     # Provide client_id/client_secret via auth header rather than form body.
     data = {"grant_type":"authorization_code","code":code, "redirect_uri": redirect_uri}
     r = requests.post(token_url, data=data, auth=(cid, csec), headers={"Accept":"application/json"}, timeout=10)
