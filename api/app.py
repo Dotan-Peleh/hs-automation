@@ -1116,23 +1116,51 @@ def insights(
         one_liner = build_one_liner(raw, entities, cats, extra, bucket, intent_injected)
         
         # If one-liner is empty or too generic, create a better one from actual message content
-        if not one_liner or len(one_liner.strip()) < 10 or one_liner.strip() in ['support request', 'bug/crash report', 'support']:
+        # Check for generic patterns that aren't helpful
+        is_generic = (
+            not one_liner or 
+            len(one_liner.strip()) < 15 or 
+            one_liner.strip().lower() in ['support request', 'bug/crash report', 'support', 'bug report', 'crash report'] or
+            one_liner.strip().lower().endswith(' - needs review') or
+            one_liner.strip().lower().startswith('support request on') or
+            one_liner.strip().lower().startswith('bug report on') or
+            one_liner.strip().lower().startswith('crash report on')
+        )
+        
+        if is_generic:
             # Extract key issue from the ACTUAL MESSAGE CONTENT
             message_content = (c.last_text or c.subject or '').strip()
             if len(message_content) > 20:
                 # Clean up and extract main issue from real user message
                 lines = message_content.split('\n')
-                for line in lines[:5]:  # Check more lines
+                
+                # First pass: Look for the ACTUAL user-written content
+                for line in lines:
                     line = line.strip()
-                    if len(line) > 20 and len(line) < 200:  # More lenient length
-                        # Skip metadata/boilerplate but keep real issues
-                        if not any(skip in line.lower() for skip in [
-                            'userid', 'device =', 'os =', 'much regards', 'google play console',
-                            'font-family', 'aptos', 'msfontservice', 'div style', '<br>', '</div>',
-                            'roboto', 'arial', 'helvetica', 'sans-serif'
-                        ]):
-                            one_liner = line
-                            break
+                    
+                    # Skip obvious metadata/headers
+                    if not line or len(line) < 15:
+                        continue
+                    if any(skip in line.lower() for skip in [
+                        'userid', 'user id', 'distinct_id', 'device =', 'os =', 'much regards', 
+                        'sincerely', 'google play console', 'hello,', 'from noreply',
+                        'font-family', 'aptos', 'msfontservice', 'div style', '<br>', '</div>',
+                        'roboto', 'arial', 'helvetica', 'sans-serif', 'gmail.com', '@'
+                    ]):
+                        continue
+                    
+                    # Clean the line
+                    clean = _re.sub(r'<[^>]+>', '', line)  # Remove HTML
+                    clean = _re.sub(r'\s+', ' ', clean).strip()  # Normalize whitespace
+                    
+                    # Remove common email prefixes
+                    clean = _re.sub(r'^(hello,?|hi,?|dear,?|we wanted to let you know that|a user wrote new beta feedback|new beta feedback for your app)\\s*', '', clean, flags=_re.IGNORECASE)
+                    clean = clean.strip()
+                    
+                    # If this line has substantial content, use it
+                    if len(clean) > 20 and len(clean) < 250:
+                        one_liner = clean
+                        break
                 
                 # If still no good description, extract actual feedback content
                 if not one_liner or len(one_liner.strip()) < 15:
