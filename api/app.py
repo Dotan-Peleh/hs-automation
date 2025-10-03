@@ -285,7 +285,7 @@ async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
             # raise HTTPException(status_code=401, detail="Invalid HS signature")
 
     try:
-    payload = await req.json()
+        payload = await req.json()
     except Exception:
         return {"ok": True} # Ignore malformed JSON
 
