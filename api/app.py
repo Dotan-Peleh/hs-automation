@@ -95,9 +95,19 @@ def healthz():
 
 # Mark ticket as seen/dismissed
 @app.post("/admin/ticket/mark_seen")
-def mark_ticket_seen(conv_id: int, action: str = "seen"):
+async def mark_ticket_seen(req: Request):
     """Mark a ticket as seen or dismissed by the user."""
     import json
+    try:
+        data = await req.json()
+        conv_id = data.get('conv_id')
+        action = data.get('action', 'dismissed')
+    except:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
+    if not conv_id:
+        raise HTTPException(status_code=400, detail="conv_id required")
+        
     with get_session() as s:
         # Upsert feedback
         existing = s.query(TicketFeedback).filter_by(conversation_id=conv_id, action_type=action).first()
@@ -631,8 +641,12 @@ def insights(
         # UX issues
         if any(k in t for k in ("ux", "ui", "button", "menu", "layout", "confus", "hard to", "can't find", "cannot find")):
             tags.append("tag:ux_issue")
-        # Purchase/payment signals (generic)
-        if any(k in t for k in ("purchase", "payment", "charged", "iap", "in-app", "subscription", "renewal")):
+        # Credits not received (NOT purchase - earned credits missing)
+        if any(k in t for k in ("didn't get credits", "not getting credits", "credits missing", "credits disappeared", "no credits", "credits not received", "earned credits", "task credits")):
+            tags.append("tag:credits_missing")
+            tags.append("intent:bug_report")  # This is a bug, not purchase
+        # Actual purchase/payment issues (spent money)
+        elif any(k in t for k in ("purchase", "payment", "charged", "iap", "in-app", "subscription", "renewal", "bought", "paid for")):
             tags.append("tag:purchase_issue")
         # Domain-specific keyword: flowers
         if "flowers" in t or "flower" in t:
@@ -1094,7 +1108,9 @@ def insights(
     replied_count = 0
     unreplied_count = 0
     for r in recs:
-        if r.get("agent_replied"):
+        # Check if agent:replied tag is present
+        tags = r.get("suggested_tags", [])
+        if "agent:replied" in tags:
             replied_count += 1
         else:
             unreplied_count += 1
@@ -1167,28 +1183,25 @@ def insights(
             "last_seen": meta.get("last_seen"),
         }
 
-    # Generate global summary (page 1 only)
+    # Generate global summary (page 1 only) - ALWAYS generate
     global_summary = ""
     if int(page) == 1 and recs:
         try:
-            if llm.is_enabled():
-                global_summary = llm.get_global_summary(recs)
+            # Always use simple summary (works without LLM)
+            total_tickets = len(recs)
+            high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
+            intents = {}
+            for r in recs:
+                intent = r.get('intent', 'unknown')
+                intents[intent] = intents.get(intent, 0) + 1
+            top_intent = max(intents.items(), key=lambda x: x[1])[0] if intents else 'none'
+            
+            if high_critical > 0:
+                global_summary = f"⚠️ {high_critical} high/critical issues need attention out of {total_tickets} total tickets. Most common: {top_intent.replace('_', ' ')}."
             else:
-                # Simple summary without LLM
-                total_tickets = len(recs)
-                high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
-                intents = {}
-                for r in recs:
-                    intent = r.get('intent', 'unknown')
-                    intents[intent] = intents.get(intent, 0) + 1
-                top_intent = max(intents.items(), key=lambda x: x[1])[0] if intents else 'none'
-                
-                if high_critical > 0:
-                    global_summary = f"⚠️ {high_critical} high/critical issues need attention out of {total_tickets} total tickets. Most common: {top_intent.replace('_', ' ')}."
-                else:
-                    global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent.replace('_', ' ')} requests."
-        except Exception:
-            pass # Fail gracefully
+                global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent.replace('_', ' ')} requests."
+        except Exception as e:
+            global_summary = f"Analysis error: {e}"  # Debug what's wrong
             
     return {
         "count": len(recs),
