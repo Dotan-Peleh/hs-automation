@@ -247,12 +247,13 @@ const Dashboard = () => {
     let latestNumber: number = 0;
     (async () => {
       try {
-        // Ensure we have most recent tickets before analyzing
-        try { await fetch(base + '/admin/backfill?limit_pages=1'); } catch {}
+        // Only show loading if we have no data yet
+        if (!insightRecs.length) {
         setInsightRecs([{ __loading: true, __progress: 'Fetching page 1…' } as any]);
-        const pageSize = 20; // Reduced from 50 for faster initial load
+        }
+        const pageSize = 20;
         let page = 1;
-        let aggregated: any[] = [];
+        let aggregated: any[] = [...insightRecs.filter(r => !r.__loading)]; // Keep existing data
         while (!cancelled) {
           const url = `${base}/admin/insights?hours=48&limit=${pageSize}&page=${page}${latestNumber?`&min_number=${latestNumber}`:''}`;
           if (!cancelled) setInsightRecs((cur)=>[{ __loading: true, __progress: `Fetching page ${page}…` } as any, ...cur.filter((x:any)=>!x.__loading)]);
@@ -285,7 +286,18 @@ const Dashboard = () => {
           const recsOut = aggregated
             .map((r: any) => ({ ...r, similar_count: r.cluster_key ? clusterCounts[r.cluster_key] : 1 }))
             .sort((a:any,b:any)=> (b.number||0)-(a.number||0));
-          if (!cancelled) setInsightRecs(recsOut);
+          if (!cancelled) {
+            // Preserve UI state - merge new data with existing
+            setInsightRecs(prev => {
+              const existingIds = new Set(prev.filter(r => !r.__loading).map(r => r.id));
+              const newItems = recsOut.filter(r => !existingIds.has(r.id));
+              const updatedItems = prev.filter(r => !r.__loading).map(existing => {
+                const updated = recsOut.find(r => r.id === existing.id);
+                return updated || existing;
+              });
+              return [...newItems, ...updatedItems].sort((a,b) => (b.number||0)-(a.number||0));
+            });
+          }
           const expectedTotal = Number(j.total || 0);
           if (expectedTotal && aggregated.length >= expectedTotal) break;
           page += 1;

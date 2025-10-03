@@ -285,7 +285,7 @@ async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
             # raise HTTPException(status_code=401, detail="Invalid HS signature")
 
     try:
-        payload = await req.json()
+    payload = await req.json()
     except Exception:
         return {"ok": True} # Ignore malformed JSON
 
@@ -484,7 +484,7 @@ def insights(
     with get_session() as s2:
         dismissed = s2.query(TicketFeedback).filter(TicketFeedback.action_type.in_(['seen', 'dismissed'])).all()
         dismissed_ids = set(fb.conversation_id for fb in dismissed)
-    
+
     recs = []
     cat_totals = {}
     word_counts = {}
@@ -598,7 +598,7 @@ def insights(
         elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
             # Make sure it's not just mentioning login in passing
             if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
-                tags.append("intent:account_access")
+            tags.append("intent:account_access")
         if any(k in t for k in ("delete my account", "delete account", "remove my data", "erase my data", "gdpr", "ccpa")):
             tags.append("intent:account_deletion")
         # Store login issues (specific pattern from Google Play Console / App Store)
@@ -811,14 +811,14 @@ def insights(
             if first_sentence and len(first_sentence) > 30:
                 label = first_sentence[:100]  # Cap at 100 chars
             else:
-                label = intent_map.get(intent, primary_cat or 'support request')
+            label = intent_map.get(intent, primary_cat or 'support request')
             
             parts = []
             # Only add severity prefix for high/critical
             if bucket and str(bucket).lower() in ("high","critical"):
                 parts.append(str(bucket).lower())
             if not first_sentence or len(first_sentence) < 30:
-                parts.append(label)
+            parts.append(label)
             if appv:
                 parts.append(f"v{appv}")
             if isinstance(lvl, int):
@@ -893,14 +893,26 @@ def insights(
         # Filter out weak categories
         cats = [c for c in (cats or []) if c not in ("uncategorized", "device")]
         # Skip re-counting categories here (already counted in first pass)
-        # existing HS tags
+        # existing HS tags - LEARN FROM THEM!
         existing_tags = []
         try:
             existing_tags = ((c.tags or '').split(",")) if getattr(c, 'tags', None) else []
+            # Learn from Help Scout tags to improve our detection
             for t in existing_tags:
-                t2 = (t or '').strip()
+                t2 = (t or '').strip().lower()
                 if t2:
                     tag_counts[t2] = tag_counts.get(t2, 0) + 1
+                    # Learn patterns from HS tags
+                    if 'crash' in t2 and 'tag:critical_crash' not in custom_wo_intent:
+                        custom_wo_intent.append('tag:critical_crash')
+                    elif 'freeze' in t2 and 'tag:app_freeze' not in custom_wo_intent:
+                        custom_wo_intent.append('tag:app_freeze')
+                    elif 'progress' in t2 and 'tag:progress_lost' not in custom_wo_intent:
+                        custom_wo_intent.append('tag:progress_lost')
+                    elif 'credits' in t2 and 'tag:credits_missing' not in custom_wo_intent:
+                        custom_wo_intent.append('tag:credits_missing')
+                    elif 'store' in t2 and 'tag:store_issue' not in custom_wo_intent:
+                        custom_wo_intent.append('tag:store_issue')
         except Exception:
             pass
         sev_score = severity.compute(raw, entities, rule_score)
@@ -1114,7 +1126,7 @@ def insights(
             replied_count += 1
         else:
             unreplied_count += 1
-    
+
     top_categories = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)[:10]
     top_keywords = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:20]
     top_clusters = sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -1208,7 +1220,7 @@ def insights(
                 global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent_clean} requests."
         except Exception as e:
             global_summary = f"Analysis error: {e}"  # Debug what's wrong
-            
+
     return {
         "count": len(recs),
         "total": total,
