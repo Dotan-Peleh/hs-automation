@@ -73,3 +73,37 @@ def _extract_id_like(text: str) -> str | None:
         return m.group(1) if m else None
     except Exception:
         return None
+
+
+def get_global_summary(tickets: list[dict]) -> str:
+    """Generate a high-level summary of the current situation from a list of tickets."""
+    if not is_enabled() or not tickets:
+        return ""
+    
+    # Create a concise summary of the tickets
+    ticket_previews = []
+    for t in tickets[:20]: # Use top 20 most recent/relevant for summary
+        preview = f"- Ticket #{t.get('number')}: {t.get('one_liner')} (Severity: {t.get('severity_bucket')})"
+        ticket_previews.append(preview)
+    
+    prompt = f"""
+    You are an expert game support analyst. Based on the following recent tickets, provide a 2-3 sentence summary of the current situation for a support manager.
+    Highlight any widespread issues (look for high 'similar_count'), critical bugs, or emerging patterns. Be concise and action-oriented.
+
+    Recent Tickets:
+    { "
+".join(ticket_previews) }
+
+    Summary:
+    """
+    
+    try:
+        completion = _client.completions.create(
+            model="claude-2.1",
+            max_tokens_to_sample=200,
+            prompt=f"\n\nHuman: {prompt}\n\nAssistant:",
+        )
+        return completion.completion.strip()
+    except Exception as e:
+        print(f"ERROR: LLM global summary failed: {e}")
+        return ""

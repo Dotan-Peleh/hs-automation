@@ -1,5 +1,5 @@
 import os, hmac, hashlib, threading, time, re as _re
-from fastapi import FastAPI, Request, HTTPException, Query, Response
+from fastapi import FastAPI, Request, HTTPException, Query, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
@@ -240,8 +240,28 @@ def _vector_upsert_one(conv_id: int, number: int | None, subject: str | None, te
     except Exception:
         return False
 
+async def process_webhook_event(conv_id: int):
+    """(Async) Fetch full conversation, enrich, and store. This is slow."""
+    with get_session() as s:
+        try:
+            conv = helpscout.fetch_conversation(conv_id)
+            if not conv: return
+            
+            # This will upsert conversation and all enrichments (including agent_replied status)
+            upsert_hs_conversation(s, conv)
+            
+            # Publish event for real-time dashboard updates
+            _publish_event({
+                'type': 'new_message',
+                'conv_id': conv_id,
+                'number': conv.get('number'),
+                'subject': conv.get('subject')
+            })
+        except Exception as e:
+            print(f"ERROR: Webhook processing failed for conv_id {conv_id}: {e}")
+
 @app.post("/helpscout/webhook")
-async def hs_webhook(req: Request):
+async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
     body = await req.body()
     secret = os.getenv("HS_WEBHOOK_SECRET", "").strip()
     
@@ -250,168 +270,22 @@ async def hs_webhook(req: Request):
         sig = req.headers.get("X-HelpScout-Signature", "")
         mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, mac):
-            # Log the mismatch for debugging
-            print(f"Webhook signature mismatch. Expected: {mac}, Got: {sig}")
-            print(f"Secret length: {len(secret)}, Body length: {len(body)}")
-            # Make it lenient for now - just log warning instead of rejecting
             print("WARNING: Signature mismatch but allowing request for debugging")
-            # Uncomment the line below once secret is confirmed working:
+            # In production, you would uncomment this:
             # raise HTTPException(status_code=401, detail="Invalid HS signature")
 
-    payload = await req.json()
+    try:
+        payload = await req.json()
+    except Exception:
+        return {"ok": True} # Ignore malformed JSON
+
     conv_id = helpscout.extract_conversation_id(payload)
     if not conv_id:
-        raise HTTPException(status_code=400, detail="Missing conversation id")
-
-    try:
-        conv = helpscout.fetch_conversation(conv_id)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"HS fetch failed: {e}")
-    text = helpscout.extract_text(conv)
-    first, last = helpscout.extract_customer_name(conv)
-    subj = conv.get("subject") or ""
-    combined = (subj + "\n" + text).strip()
-
-    entities = classify.extract_entities(combined)
-    cats, rule_score = classify.categorize(combined)
-
-    # optional LLM enrichment
-    extra = llm.enrich(combined) if llm.is_enabled() else {}
-    if extra.get("summary"):
-        entities = {**entities}
-        if extra.get("platform"): entities["platform"] = extra["platform"]
-        if extra.get("app_version"): entities["app_version"] = extra["app_version"]
-        if extra.get("level") is not None: entities["level"] = extra["level"]
-        cats = sorted(set((cats or []) + (extra.get("categories") or [])))
-
-    cluster = fingerprint.cluster_key(combined, entities)
-    sev_score = severity.compute(combined, entities, rule_score)
-    z, cus = anomaly.update_and_score(cluster)
-    bucket = severity.bucketize(sev_score, z, cus) or "low"
-
-    try:
-        helpscout.ensure_tags(conv_id, cats, sev_score, entities)
-    except Exception as e:
-        # don't fail the webhook on tag write issues
-        pass
-
-    try:
-        with get_session() as s:
-            # Persist/update conversation so dashboard queries include this ticket (delta upsert)
-            raw_tags = conv.get("tags") or []
-            tag_names = [t.get("tag") if isinstance(t, dict) else str(t) for t in raw_tags]
-            tags_str = ",".join([t for t in tag_names if t])
-            updated_at_dt = None
-            try:
-                updated_iso = conv.get("updatedAt") or conv.get("createdAt")
-                if updated_iso:
-                    from datetime import datetime
-                    updated_at_dt = datetime.fromisoformat(updated_iso.replace("Z","+00:00")).replace(tzinfo=None)
-            except Exception:
-                pass
-            # Delta upsert only when updated
-            existing = s.query(HsConversation).get(conv_id)
-            if not existing or (updated_at_dt and (existing.updated_at or datetime.min) < updated_at_dt):
-                upsert_hs_conversation(s, conv_id, conv.get("number"), subj, text, tags_str, updated_at_dt)
-                # publish a real-time event so connected dashboards can notify
-                try:
-                    _publish_event({
-                        "type": "new_message",
-                        "conv_id": conv_id,
-                        "number": conv.get("number"),
-                        "subject": subj,
-                        "updated_at": (updated_at_dt.isoformat()+"Z") if updated_at_dt else None,
-                    })
-                except Exception:
-                    pass
-            # derive suggested tags and one-liner using same helpers as insights
-            extra = llm.enrich(combined) if llm.is_enabled() else {}
-            from datetime import datetime, timedelta
-            from math import floor
-            # day window from 10:00 UTC to next 10:00 UTC
-            now = datetime.utcnow()
-            day_start = now.replace(hour=10, minute=0, second=0, microsecond=0)
-            if now < day_start:
-                day_start = day_start - timedelta(days=1)
-            # reuse derive_custom_tags and build_one_liner from insights scope by defining minimal shims
-            def _derive(text, entities, cats, extra):
-                t = (text or '').lower()
-                tags = []
-                if any(k in t for k in ("refund","chargeback","charged twice","double charge","money back","unauthorized charge","billing issue","payment issue","invoice","receipt")):
-                    tags.append("intent:refund_request")
-                if any(k in t for k in ("cancel subscription","unsubscribe","cancel my subscription","stop charging","turn off auto-renew","disable auto renew","cancel renewal")):
-                    tags.append("intent:cancel_subscription")
-                if any(k in t for k in ("can't log in","cant log in","cannot log in","login problem","log in problem","password reset","forgot password","2fa","two factor","verification code","verification email")):
-                    tags.append("intent:account_access")
-                if any(k in t for k in ("delete my account","delete account","remove my data","erase my data","gdpr","ccpa")):
-                    tags.append("intent:account_deletion")
-                if any(k in t for k in ("progress lost","lost progress","save lost","reset progress","rollback")):
-                    tags.append("intent:recover_progress")
-                if any(k in t for k in ("crash","crashing","force close","exception","stuck on","freeze","freezing","bug")):
-                    tags.append("intent:bug_report")
-                if any(k in t for k in ("slow","lag","stutter","fps","performance")):
-                    tags.append("intent:performance_issue")
-                if any(k in t for k in ("feature request","please add","could you add","it would be great if")):
-                    tags.append("intent:feature_request")
-                if any(k in t for k in ("how do i","how to","where is","can you explain","how can i")):
-                    tags.append("intent:how_to")
-                if any(k in t for k in ("new phone","new device","switch device","migrate","transfer progress","restore purchase")):
-                    tags.append("intent:device_migration")
-                platform = (entities or {}).get("platform") or (extra or {}).get("platform")
-                if isinstance(platform, str) and platform:
-                    tags.append(f"platform:{platform}")
-                appv = (entities or {}).get("app_version") or (extra or {}).get("app_version")
-                if isinstance(appv, str) and appv:
-                    tags.append(f"version:{appv}")
-                return tags
-            def _one_liner(text, entities, cats, extra, bucket, suggested):
-                try:
-                    platform = (entities or {}).get('platform') or (extra or {}).get('platform')
-                    appv = (entities or {}).get('app_version') or (extra or {}).get('app_version')
-                    lvl = (entities or {}).get('level')
-                    intent = ''
-                    for t in (suggested or []):
-                        if isinstance(t, str) and t.startswith('intent:'): intent = t.split(':',1)[1]; break
-                    intent_map = { 'refund_request':'refund request','cancel_subscription':'subscription cancellation','account_access':'account access issue','account_deletion':'account deletion request','recover_progress':'recover lost progress','bug_report':'bug/crash report','performance_issue':'performance issue','feature_request':'feature request','how_to':'how-to question','device_migration':'device migration/restore' }
-                    primary_cat = None
-                    for ccat in (cats or []):
-                        if ccat not in ('uncategorized','device'): primary_cat = ccat.replace('_',' '); break
-                    label = intent_map.get(intent, primary_cat or 'support request')
-                    parts = [str(bucket).lower(), label]
-                    if platform: parts.append(f"on {platform}")
-                    if appv: parts.append(f"v{appv}")
-                    if isinstance(lvl, int): parts.append(f"lvl {lvl}")
-                    return ' '.join([p for p in parts if p])[:180]
-                except Exception:
-                    return 'support request'
-            custom = _derive(combined, entities, cats, extra)
-            cats = [c for c in (cats or []) if c not in ("uncategorized","device")]
-            suggested = [f"sev:{bucket}"] + [f"cat:{x}" for x in (cats or [])] + custom
-            one = _one_liner(combined, entities, cats, extra, bucket, suggested)
-            # persist ticket event with normalized day_start
-            # attach user context to tags string for now (non-breaking)
-            extra_tags = [t for t in suggested]
-            if first or last:
-                extra_tags.append(f"user:{(first or '').strip()} {(last or '').strip()}".strip())
-            record_ticket_event(s, conv_id, conv.get('number'), subj, combined, entities, cats, bucket, sev_score, cluster, z, cus, None, next((t.split(':',1)[1] for t in suggested if t.startswith('intent:')), None), ','.join(extra_tags), one, extra.get('summary'), day_start)
-            incident = upsert_incident(s, cluster, bucket, sev_score)
-            if not incident.slack_thread_ts:
-                summary = extra.get("summary") if 'extra' in locals() else None
-                ts, ch = slack.post_parent(incident, cats, entities, z, cus, summary)
-                incident.slack_thread_ts = ts
-                incident.slack_channel_id = ch
-                s.commit()
-            else:
-                slack.post_update(incident, cats, entities, z, cus)
-    except Exception as e:
-        # don't fail the webhook on persistence issues
-        return {"ok": True, "stored": False}
-    # auto-upsert vector for this conversation (best-effort)
-    try:
-        updated_iso = None
-        _vector_upsert_one(conv_id, conv.get("number"), subj, text, updated_iso)
-    except Exception:
-        pass
+        return {"ok": True} # Nothing to do
+    
+    # Process in background to avoid timeouts
+    background_tasks.add_task(process_webhook_event, conv_id)
+    
     return {"ok": True}
 
 @app.get("/admin/preview")
@@ -711,7 +585,7 @@ def insights(
             tags.append("intent:gameplay_feedback")
         # Account access / credentials (VERY common) - BUT check context
         # Only tag as account_access if there's ACTUAL login problem keywords
-        elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "login failed", "login error", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email", "locked out", "can't access account", "cannot access account")):
+        elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
             # Make sure it's not just mentioning login in passing
             if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
                 tags.append("intent:account_access")
@@ -722,7 +596,7 @@ def insights(
             tags.append("intent:account_access")
             tags.append("tag:store_issue")
         # Lost progress / restore
-        if any(k in t for k in ("progress lost", "lost progress", "save lost", "reset progress", "rollback", "losing progress", "not saving", "progress not saving", "went back to", "back to level", "rollback to level")):
+        if any(k in t for k in ("progress lost", "lost progress", "save lost", "reset progress", "rollback")):
             tags.append("intent:recover_progress")
         # Critical issues - app/game completely broken
         if any(k in t for k in ("app crash", "game crash", "crashing", "force close", "won't start", "can't start", "won't open", "can't open")):
@@ -766,14 +640,14 @@ def insights(
         # Content/features disappeared (NOT purchase - could be tasks, levels, items)
         if any(k in t for k in ("daily tasks disappeared", "tasks disappeared", "disappeared", "things disappeared", "features disappeared", "content disappeared")):
             tags.append("tag:content_missing")
-            tags.append("intent:bug_report")
+            if "intent:bug_report" not in tags: tags.append("intent:bug_report")
         # Item disappeared / progress lost / restart prompts
         if any(k in t for k in ("item disappeared", "item gone", "lost item", "missing item", "inventory missing")):
             tags.append("tag:item_disappeared")
+            if "intent:bug_report" not in tags: tags.append("intent:bug_report") # Also a bug
         if any(k in t for k in ("progress lost", "lost progress", "save lost", "progress reset", "account reset", "losing progress", "not saving", "progress not saving", "went back to", "back to level", "rollback to level")):
             tags.append("tag:progress_lost")
-        if any(k in t for k in ("restart the game", "restart app", "reinstall", "re-install")):
-            tags.append("tag:restart_prompt")
+            tags.append("intent:bug_report") # Also a bug
         # Platform tags from entities or LLM
         platform = (entities or {}).get("platform") or (extra or {}).get("platform")
         if isinstance(platform, str) and platform:
@@ -931,8 +805,6 @@ def insights(
                 parts.append(str(bucket).lower())
             if not first_sentence or len(first_sentence) < 30:
                 parts.append(label)
-            if platform:
-                parts.append(f"on {platform}")
             if appv:
                 parts.append(f"v{appv}")
             if isinstance(lvl, int):
@@ -1070,6 +942,8 @@ def insights(
                 new_cat = 'progress_lost'
             elif has('purchase_issue') or (intent_val in ('refund_request',)):
                 new_cat = 'purchase'
+            elif has('content_missing'):
+                new_cat = 'content_missing'
             elif any(k in (c.last_text or '').lower() for k in ('crash','exception','stuck','freeze')) or (intent_val == 'bug_report'):
                 new_cat = 'crash'
             if new_cat:
@@ -1293,6 +1167,14 @@ def insights(
             "last_seen": meta.get("last_seen"),
         }
 
+    # Generate global summary (page 1 only)
+    global_summary = ""
+    if int(page) == 1 and recs:
+        try:
+            global_summary = llm.get_global_summary(recs)
+        except Exception:
+            pass # Fail gracefully
+            
     return {
         "count": len(recs),
         "total": total,
@@ -1300,6 +1182,7 @@ def insights(
         "page_size": int(_ps),
         "replied_count": replied_count,
         "unreplied_count": unreplied_count,
+        "global_summary": global_summary,
         "top_categories": [{"name": k, "count": v} for k, v in top_categories],
         "top_keywords": [{"word": k, "count": v} for k, v in top_keywords],
         "top_clusters": [{"cluster_key": k, "count": v} for k, v in top_clusters],
