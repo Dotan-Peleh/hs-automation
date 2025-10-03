@@ -284,14 +284,15 @@ async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
             # In production, you would uncomment this:
             # raise HTTPException(status_code=401, detail="Invalid HS signature")
 
+    # Parse webhook payload
     try:
         payload = await req.json()
     except Exception:
-        return {"ok": True} # Ignore malformed JSON
+        return {"ok": True}  # Ignore malformed JSON
 
     conv_id = helpscout.extract_conversation_id(payload)
     if not conv_id:
-        return {"ok": True} # Nothing to do
+        return {"ok": True}  # Nothing to do
     
     # Process in background to avoid timeouts
     background_tasks.add_task(process_webhook_event, conv_id)
