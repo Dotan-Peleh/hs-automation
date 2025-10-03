@@ -285,7 +285,7 @@ async def hs_webhook(req: Request, background_tasks: BackgroundTasks):
             # raise HTTPException(status_code=401, detail="Invalid HS signature")
 
     try:
-    payload = await req.json()
+        payload = await req.json()
     except Exception:
         return {"ok": True} # Ignore malformed JSON
 
@@ -598,7 +598,7 @@ def insights(
         elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
             # Make sure it's not just mentioning login in passing
             if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
-            tags.append("intent:account_access")
+                tags.append("intent:account_access")
         if any(k in t for k in ("delete my account", "delete account", "remove my data", "erase my data", "gdpr", "ccpa")):
             tags.append("intent:account_deletion")
         # Store login issues (specific pattern from Google Play Console / App Store)
@@ -837,14 +837,14 @@ def insights(
             if first_sentence and len(first_sentence) > 30:
                 label = first_sentence[:100]  # Cap at 100 chars
             else:
-            label = intent_map.get(intent, primary_cat or 'support request')
+                label = intent_map.get(intent, primary_cat or 'support request')
             
             parts = []
             # Only add severity prefix for high/critical
             if bucket and str(bucket).lower() in ("high","critical"):
                 parts.append(str(bucket).lower())
             if not first_sentence or len(first_sentence) < 30:
-            parts.append(label)
+                parts.append(label)
             if appv:
                 parts.append(f"v{appv}")
             if isinstance(lvl, int):
