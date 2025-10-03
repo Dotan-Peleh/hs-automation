@@ -811,14 +811,14 @@ def insights(
             if first_sentence and len(first_sentence) > 30:
                 label = first_sentence[:100]  # Cap at 100 chars
             else:
-            label = intent_map.get(intent, primary_cat or 'support request')
+                label = intent_map.get(intent, primary_cat or 'support request')
             
             parts = []
             # Only add severity prefix for high/critical
             if bucket and str(bucket).lower() in ("high","critical"):
                 parts.append(str(bucket).lower())
             if not first_sentence or len(first_sentence) < 30:
-            parts.append(label)
+                parts.append(label)
             if appv:
                 parts.append(f"v{appv}")
             if isinstance(lvl, int):
