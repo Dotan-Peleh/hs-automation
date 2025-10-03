@@ -137,11 +137,25 @@ const Dashboard = () => {
   const [insightsCats, setInsightsCats] = useState<any[]>([]);
   const [insightsWords, setInsightsWords] = useState<any[]>([]);
   const [issueAnalysis, setIssueAnalysis] = useState<any | null>(null);
-  const [insightRecs, setInsightRecs] = useState<any[]>([]);
+  // Preserve state across refreshes using localStorage
+  const [insightRecs, setInsightRecs] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('insightRecs');
+        return saved ? JSON.parse(saved) : [];
+      } catch { return []; }
+    }
+    return [];
+  });
   const [toastMsg, setToastMsg] = useState<string>('');
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [feedbackTicket, setFeedbackTicket] = useState<any>(null);
-  const [globalSummary, setGlobalSummary] = useState('');
+  const [globalSummary, setGlobalSummary] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('globalSummary') || '';
+    }
+    return '';
+  });
 
   // Remove mock injection; rely on live data only
 
@@ -180,37 +194,48 @@ const Dashboard = () => {
     }
   };
 
-  // Mark ticket as done/seen (toggle)
+  // Mark ticket as done/seen (toggle) - INSTANT UI UPDATE
   const markAsSeen = async (convId: number) => {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     const isDismissed = dismissedIds.has(convId);
     
+    // UPDATE UI IMMEDIATELY (optimistic update)
+    if (isDismissed) {
+      const newSet = new Set(Array.from(dismissedIds));
+      newSet.delete(convId);
+      setDismissedIds(newSet);
+      setToastMsg('↩️ Ticket unmarked');
+    } else {
+      setDismissedIds(prev => new Set(Array.from(prev).concat(convId)));
+      setToastMsg('✅ Ticket marked as done');
+    }
+    setTimeout(() => setToastMsg(''), 2000);
+    
+    // THEN sync with server in background
     try {
       if (isDismissed) {
-        // Unmark - remove from dismissed set
         await fetch(base + '/admin/ticket/unmark', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conv_id: convId })
         });
-        const newSet = new Set(Array.from(dismissedIds));
-        newSet.delete(convId);
-        setDismissedIds(newSet);
-        setToastMsg('↩️ Ticket unmarked');
-        setTimeout(() => setToastMsg(''), 2000);
       } else {
-        // Mark as done
         await fetch(base + '/admin/ticket/mark_seen', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conv_id: convId, action: 'dismissed' })
         });
-        setDismissedIds(prev => new Set(Array.from(prev).concat(convId)));
-        setToastMsg('✅ Ticket marked as done');
-        setTimeout(() => setToastMsg(''), 3000);
       }
     } catch (e) {
-      console.error('Failed to mark as seen:', e);
+      console.error('Failed to sync with server:', e);
+      // Revert UI change if server call failed
+      if (isDismissed) {
+        setDismissedIds(prev => new Set(Array.from(prev).concat(convId)));
+      } else {
+        const newSet = new Set(Array.from(dismissedIds));
+        newSet.delete(convId);
+        setDismissedIds(newSet);
+      }
     }
   };
 
@@ -270,6 +295,7 @@ const Dashboard = () => {
             setIssueAnalysis(analysis);
             if (j.global_summary) {
               setGlobalSummary(j.global_summary);
+              localStorage.setItem('globalSummary', j.global_summary);
             }
           }
           const batch: any[] = j.recommendations || [];
@@ -295,7 +321,10 @@ const Dashboard = () => {
                 const updated = recsOut.find(r => r.id === existing.id);
                 return updated || existing;
               });
-              return [...newItems, ...updatedItems].sort((a,b) => (b.number||0)-(a.number||0));
+              const result = [...newItems, ...updatedItems].sort((a,b) => (b.number||0)-(a.number||0));
+              // Save to localStorage for persistence
+              localStorage.setItem('insightRecs', JSON.stringify(result.slice(0, 100))); // Keep last 100
+              return result;
             });
           }
           const expectedTotal = Number(j.total || 0);
@@ -973,11 +1002,16 @@ const Dashboard = () => {
                             {r.similar_count} similar
                       </span>
                         )}
-                        {/* Show all unique tags with distinct colors */}
-                    {(r.suggested_tags || [])
+                        {/* Show Help Scout tags first, then suggested tags */}
+                        {(r.existing_tags || []).slice(0, 3).map((t: string) => (
+                          <span key={`hs-${t}`} className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
+                            🏷️ {t}
+                          </span>
+                        ))}
+                        {(r.suggested_tags || [])
                           .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:'))
-                          .slice(0, 8)
-                      .map((t: string) => {
+                          .slice(0, 6)
+                          .map((t: string) => {
                             const lower = t.toLowerCase();
                             let color = 'bg-gray-100 text-gray-700 border border-gray-200';
                             let label = t;
