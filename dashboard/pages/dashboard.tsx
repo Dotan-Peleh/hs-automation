@@ -214,13 +214,12 @@ const Dashboard = () => {
     }
   };
 
-  // Fetch live backend stats for last 48h to reflect real HS data
+  // Fetch live backend stats for last 48h to reflect real HS data (ONCE on load)
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     (async () => {
       try {
-        // Trigger a quick delta backfill on each dashboard load
-        try { await fetch(base + '/admin/backfill?limit_pages=1'); } catch {}
+        // Only fetch dashboard data ONCE on initial load
         const res = await fetch(base + '/admin/dashboard?hours=168');
         if (res.ok) {
           const j = await res.json();
@@ -239,7 +238,7 @@ const Dashboard = () => {
         // keep mock data if backend not available
       }
     })();
-  }, []);
+  }, []); // Empty dependency array - only run ONCE
 
   // Fetch LLM-powered Insights (summaries, tags, patterns) with loading and incremental paging
   useEffect(() => {
@@ -989,6 +988,12 @@ const Dashboard = () => {
                             } else if (lower.includes('store')) {
                               color = 'bg-amber-100 text-amber-800 border border-amber-300 font-semibold';
                               label = '🏪 Store Issue';
+                            } else if (lower.includes('credits') && (lower.includes('missing') || lower.includes('not'))) {
+                              color = 'bg-orange-100 text-orange-800 border border-orange-300 font-semibold';
+                              label = '🪙 Credits Missing';
+                            } else if (lower.includes('credits') && (lower.includes('missing') || lower.includes('not'))) {
+                              color = 'bg-orange-100 text-orange-800 border border-orange-300 font-semibold';
+                              label = '🪙 Credits Missing';
                             } else if (lower.includes('purchase') || lower.includes('payment')) {
                               color = 'bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold';
                               label = '💳 Payment';

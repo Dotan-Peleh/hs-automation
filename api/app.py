@@ -1192,14 +1192,20 @@ def insights(
             high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
             intents = {}
             for r in recs:
-                intent = r.get('intent', 'unknown')
-                intents[intent] = intents.get(intent, 0) + 1
-            top_intent = max(intents.items(), key=lambda x: x[1])[0] if intents else 'none'
+                intent = r.get('intent') or 'unknown'
+                if intent and intent != 'unknown':
+                    intents[intent] = intents.get(intent, 0) + 1
+            
+            if intents:
+                top_intent = max(intents.items(), key=lambda x: x[1])[0]
+                top_intent_clean = str(top_intent).replace('_', ' ') if top_intent else 'support'
+            else:
+                top_intent_clean = 'support'
             
             if high_critical > 0:
-                global_summary = f"⚠️ {high_critical} high/critical issues need attention out of {total_tickets} total tickets. Most common: {top_intent.replace('_', ' ')}."
+                global_summary = f"⚠️ {high_critical} high/critical issues need attention out of {total_tickets} total tickets. Most common: {top_intent_clean}."
             else:
-                global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent.replace('_', ' ')} requests."
+                global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent_clean} requests."
         except Exception as e:
             global_summary = f"Analysis error: {e}"  # Debug what's wrong
             
