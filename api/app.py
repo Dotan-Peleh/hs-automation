@@ -1948,17 +1948,40 @@ def backfill_all(max_pages: int = 999):
         if not next_link:
             print(f"✅ Reached end of Help Scout history at page {page}. Total saved: {total_saved}")
             break
-        
-        # Stop early if we've fetched 3 pages with no new tickets (all caught up)
-        if total_saved == 0 and page >= 3:
-            print(f"⏹️  Stopping - no new tickets in last 3 pages. Database is up to date.")
-            break
             
         page += 1
+        
+        # Progress update every 10 pages
+        if page % 10 == 0:
+            print(f"📊 Progress: Fetched {page} pages, saved {total_saved} new tickets so far...")
     
-    final_message = f"Successfully loaded {total_saved} historical tickets from {page} pages"
+    # Get total count in database
+    with get_session() as s:
+        total_in_db = s.query(HsConversation).count()
+    
+    final_message = f"Successfully loaded {total_saved} historical tickets from {page} pages. Total in database: {total_in_db}"
     print(f"🎉 {final_message}")
-    return {"ok": True, "saved": total_saved, "pages_fetched": page, "message": final_message}
+    return {"ok": True, "saved": total_saved, "pages_fetched": page, "total_in_db": total_in_db, "message": final_message}
+
+@app.get("/admin/db_stats")
+def db_stats():
+    """Get database statistics"""
+    with get_session() as s:
+        total_tickets = s.query(HsConversation).count()
+        total_feedback = s.query(TicketFeedback).filter_by(action_type='tag_correction').count()
+        
+        # Get date range
+        oldest = s.query(HsConversation).order_by(HsConversation.updated_at.asc()).first()
+        newest = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).first()
+        
+        return {
+            "total_tickets": total_tickets,
+            "total_corrections": total_feedback,
+            "oldest_ticket": oldest.updated_at.isoformat() if oldest and oldest.updated_at else None,
+            "newest_ticket": newest.updated_at.isoformat() if newest and newest.updated_at else None,
+            "oldest_number": oldest.number if oldest else None,
+            "newest_number": newest.number if newest else None,
+        }
 
 
 # Vector indexing

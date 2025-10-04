@@ -143,6 +143,7 @@ const Dashboard = () => {
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [feedbackTicket, setFeedbackTicket] = useState<any>(null);
   const [globalSummary, setGlobalSummary] = useState<string>('');
+  const [dbStats, setDbStats] = useState<any>(null);
   
   // Load from localStorage after component mounts
   useEffect(() => {
@@ -443,6 +444,20 @@ const Dashboard = () => {
     
     // Initial load
     refreshTickets();
+    
+    // Load database stats
+    const loadStats = async () => {
+      try {
+        const res = await fetch(`${base}/admin/db_stats`);
+        if (res.ok) {
+          const stats = await res.json();
+          setDbStats(stats);
+        }
+      } catch (err) {
+        console.warn('Failed to load DB stats:', err);
+      }
+    };
+    loadStats();
 
     return () => {
       if (pollInterval) {
@@ -635,7 +650,18 @@ const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">🎮 Game Support Dashboard</h1>
-        <p className="text-gray-600">Monitor and analyze user feedback trends from support emails</p>
+            <p className="text-gray-600">Monitor and analyze user feedback trends from support emails</p>
+            {dbStats && (
+              <div className="mt-2 text-xs text-gray-500">
+                📊 Database: {dbStats.total_tickets} tickets loaded • 
+                {dbStats.oldest_number && dbStats.newest_number && (
+                  <> Tickets #{dbStats.oldest_number} - #{dbStats.newest_number}</>
+                )}
+                {dbStats.total_corrections > 0 && (
+                  <> • 🧠 {dbStats.total_corrections} learned corrections</>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -682,8 +708,13 @@ const Dashboard = () => {
                   const res = await fetch(`${base}/admin/backfill_all?max_pages=999`);
                   if (res.ok) {
                     const result = await res.json();
-                    setToastMsg(`🎉 SUCCESS! Loaded ${result.saved || 0} historical tickets. System is learning from all data!`);
+                    setToastMsg(`🎉 SUCCESS! Loaded ${result.saved || 0} new tickets (${result.total_in_db || 0} total in DB). System is learning!`);
                     setTimeout(() => setToastMsg(''), 10000);
+                    // Reload database stats
+                    const statsRes = await fetch(`${base}/admin/db_stats`);
+                    if (statsRes.ok) {
+                      setDbStats(await statsRes.json());
+                    }
                     setTimeout(manualRefresh, 2000);
                   } else {
                     setToastMsg('❌ Historical load failed');
