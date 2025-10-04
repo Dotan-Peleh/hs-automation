@@ -120,6 +120,7 @@ const Dashboard = () => {
       ],
       platformData: [],
       severityData: [
+        { severity: 'Critical', count: 0, resolved: 0 },
         { severity: 'High', count: 0, resolved: 0 },
         { severity: 'Medium', count: 0, resolved: 0 },
         { severity: 'Low', count: 0, resolved: 0 },
@@ -359,13 +360,13 @@ const Dashboard = () => {
         console.log('🔄 Polling for new tickets...');
         const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1`);
               if (res.ok) {
-          const j = await res.json();
-          const batch: any[] = j.recommendations || [];
+                const j = await res.json();
+                const batch: any[] = j.recommendations || [];
           console.log(`📥 Received ${batch.length} tickets from API`);
           
           let hasNewTickets = false;
           
-          setInsightRecs((cur) => {
+                setInsightRecs((cur) => {
             if (!Array.isArray(cur)) cur = [];
             const existingIds = new Set(cur.map((x: any) => x?.id).filter(Boolean));
             
@@ -421,7 +422,7 @@ const Dashboard = () => {
             }, 1000);
             
             // Clear "new" badges after 15 seconds
-            setTimeout(() => {
+                setTimeout(() => {
               setInsightRecs((cur) => {
                 if (!Array.isArray(cur)) return cur;
                 return cur.map((x: any) => ({ ...x, __new: false }));
@@ -1167,8 +1168,8 @@ const Dashboard = () => {
                         {(r.existing_tags || []).slice(0, 3).map((t: string) => (
                           <span key={`hs-${t}`} className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                             🏷️ {t}
-                          </span>
-                        ))}
+                      </span>
+                    ))}
                     {/* Deduplicate tags and filter */}
                     {Array.from(new Set(r.suggested_tags || []))
                           .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:') && !t.startsWith('sentiment:') && !t.startsWith('platform:'))
@@ -1223,7 +1224,18 @@ const Dashboard = () => {
                         );
                       })}
                       </div>
-                      {/* Show one_liner as main title (actual user message), subject as subtitle if different */}
+                      {/* Show escalation reason prominently if CRITICAL */}
+                      {r.escalation_reason && r.severity_bucket === 'critical' && (
+                        <div className="text-xs font-bold text-red-800 mb-2 px-3 py-1.5 bg-red-100 rounded-lg border-2 border-red-300 inline-block">
+                          {r.escalation_reason}
+                        </div>
+                      )}
+                      {r.escalation_reason && r.severity_bucket === 'high' && (
+                        <div className="text-xs font-semibold text-orange-700 mb-2 px-2 py-1 bg-orange-50 rounded border border-orange-200 inline-block">
+                          {r.escalation_reason}
+                        </div>
+                      )}
+                      {/* Show one_liner as main title (actual user message) */}
                       <div className="text-sm font-semibold text-gray-900 mb-1">
                         {r.one_liner || r.subject || 'No description'}
                       </div>
