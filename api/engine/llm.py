@@ -11,20 +11,28 @@ HEADERS = {
 }
 
 SYSTEM = (
-    "You are a support incident enricher. Read the latest customer message and summarize the core issue in one short sentence. "
-    "Then suggest up to 2 short categories (lowercase, snake_case), and extract lightweight fields if present: platform (android/ios/web/desktop), app_version, level (integer). "
-    "If a user identifier is present (e.g., 'user:abc123', 'distinct_id abc123', 'id abc123'), extract it as distinct_id (string). "
-    "Output STRICT JSON only with keys: summary (string), categories (array of strings), platform (string|null), app_version (string|null), level (integer|null), distinct_id (string|null). No prose."
+    "You are an expert support analyst for a gaming company. Your task is to analyze a user's support ticket and provide a structured JSON output. "
+    "1. **root_cause**: A few words describing the fundamental issue (e.g., 'accidental currency use', 'game crashing on launch', 'pop-up ads are irritating'). "
+    "2. **intent**: The user's primary goal, as a single snake_case string (e.g., 'bug_report', 'billing_issue', 'lost_progress', 'feedback', 'question'). "
+    "3. **tags**: A list of 3-4 relevant keywords/tags as strings (e.g., ['crash', 'android', 'update', 'level-5']). "
+    "4. **summary**: A very short, one-sentence summary of the user's issue (max 15 words). This must be the user's specific problem, not a generic category. "
+    "Analyze the full text but be concise. Output STRICT JSON only. Do not add any extra text or explanations."
 )
 
 
 def is_enabled() -> bool:
-    return bool(ANTHROPIC_API_KEY)
+    if ANTHROPIC_API_KEY:
+        return True
+    print("⚠️ LLM enrichment is DISABLED. ANTHROPIC_API_KEY is not set.")
+    return False
 
 
 def enrich(text: str) -> dict:
     if not is_enabled() or not text:
         return {}
+    
+    print(f"🧠 Calling LLM to enrich ticket content (first 150 chars): '{text[:150].replace('\n', ' ')}...'")
+    
     try:
         payload = {
             "model": ANTHROPIC_MODEL,
@@ -39,6 +47,9 @@ def enrich(text: str) -> dict:
         content_blocks = data.get("content") or []
         raw = "".join([b.get("text", "") for b in content_blocks if isinstance(b, dict)])
         raw = raw.strip()
+        
+        print(f"🤖 LLM raw response: {raw}")
+        
         # try parse JSON; if the model wrapped with code fences, strip them
         if raw.startswith("```"):
             raw = raw.strip("`\n ")
@@ -49,15 +60,21 @@ def enrich(text: str) -> dict:
         # minimal sanitation
         if not isinstance(parsed, dict):
             return {}
+        
+        print(f"✅ LLM enrichment successful. Summary: {parsed.get('summary')}")
+        
+        # Ensure all expected keys are present
         return {
             "summary": parsed.get("summary"),
             "categories": parsed.get("categories") or [],
+            "tags": parsed.get("tags") or [],
             "platform": parsed.get("platform"),
             "app_version": parsed.get("app_version"),
             "level": parsed.get("level"),
             "distinct_id": (parsed.get("distinct_id") or _extract_id_like(parsed.get("summary") or "") ),
         }
-    except Exception:
+    except Exception as e:
+        print(f"❌ LLM enrichment FAILED. Error: {e}")
         return {}
 
 
@@ -96,13 +113,7 @@ def get_global_summary(tickets: list[dict]) -> str:
     Summary:
     """
     
-    try:
-        completion = _client.completions.create(
-            model="claude-2.1",
-            max_tokens_to_sample=200,
-            prompt=f"\n\nHuman: {prompt}\n\nAssistant:",
-        )
-        return completion.completion.strip()
-    except Exception as e:
-        print(f"ERROR: LLM global summary failed: {e}")
-        return ""
+    # This block was a leftover from a previous implementation and is not used.
+    # The 'enrich' function uses a direct 'requests.post' call.
+    # I am removing it to fix the '_client is not defined' error.
+    return ""

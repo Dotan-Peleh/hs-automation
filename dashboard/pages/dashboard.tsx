@@ -1,193 +1,143 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Calendar, TrendingUp, AlertTriangle, Bug, Zap, Monitor, Mail, Filter, Activity, AlertCircle, CheckCircle, Clock } from 'lucide-react';
-// Trigger new build
-const generateMockData = () => {
-  const categories = ['Bug', 'Crash', 'UX Issue', 'Performance', 'Technical', 'Question', 'Feature Request'];
-  const platforms = ['PC', 'PlayStation', 'Xbox', 'Mobile', 'Switch'];
-  const severities = ['Critical', 'High', 'Medium', 'Low'];
-  
-  // Generate 30 days of data
-  const dailyData: any[] = [];
-  const today = new Date();
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    dailyData.push({
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      bugs: Math.floor(Math.random() * 20) + 5,
-      crashes: Math.floor(Math.random() * 15) + 3,
-      uxIssues: Math.floor(Math.random() * 12) + 2,
-      performance: Math.floor(Math.random() * 10) + 2,
-      technical: Math.floor(Math.random() * 8) + 1,
-      questions: Math.floor(Math.random() * 25) + 10,
-      features: Math.floor(Math.random() * 6) + 1,
-      total: 0
-    });
-    dailyData[dailyData.length - 1].total = 
-      dailyData[dailyData.length - 1].bugs +
-      dailyData[dailyData.length - 1].crashes +
-      dailyData[dailyData.length - 1].uxIssues +
-      dailyData[dailyData.length - 1].performance +
-      dailyData[dailyData.length - 1].technical +
-      dailyData[dailyData.length - 1].questions +
-      dailyData[dailyData.length - 1].features;
-  }
-  
-  // Category distribution
-  const categoryData = categories.map(cat => ({
-    name: cat,
-    value: Math.floor(Math.random() * 100) + 20,
-    percentage: 0 as any
-  }));
-  const totalCat = categoryData.reduce((acc, curr) => acc + curr.value, 0);
-  categoryData.forEach(cat => (cat.percentage = (((cat.value / totalCat) * 100)).toFixed(1) as any));
-  
-  // Platform distribution
-  const platformData = platforms.map(platform => ({
-    platform,
-    issues: Math.floor(Math.random() * 80) + 20
-  }));
-  
-  // Severity distribution
-  const severityData = severities.map(severity => ({
-    severity,
-    count: Math.floor(Math.random() * 50) + 10,
-    resolved: Math.floor(Math.random() * 40) + 5
-  }));
-  
-  // Response time metrics
-  const responseTimeData = [
-    { hour: '0-1h', count: 45 },
-    { hour: '1-3h', count: 78 },
-    { hour: '3-6h', count: 123 },
-    { hour: '6-12h', count: 89 },
-    { hour: '12-24h', count: 56 },
-    { hour: '24h+', count: 34 }
-  ];
-  
-  // Top issues
-  const topIssues = [
-    { id: 1, title: 'Game crashes on level 5 boss fight', category: 'Crash', count: 234, trend: 'up', severity: 'Critical' },
-    { id: 2, title: 'Unable to save progress after update', category: 'Bug', count: 189, trend: 'up', severity: 'Critical' },
-    { id: 3, title: 'Inventory UI overlapping on mobile', category: 'UX Issue', count: 156, trend: 'down', severity: 'High' },
-    { id: 4, title: 'Frame drops in multiplayer mode', category: 'Performance', count: 134, trend: 'stable', severity: 'High' },
-    { id: 5, title: 'Audio cutting out randomly', category: 'Technical', count: 98, trend: 'down', severity: 'Medium' }
-  ];
-  
-  // Radar chart data for issue patterns
-  const radarData = [
-    { aspect: 'Gameplay', current: 85, previous: 72 },
-    { aspect: 'Graphics', current: 65, previous: 58 },
-    { aspect: 'Audio', current: 45, previous: 62 },
-    { aspect: 'Network', current: 78, previous: 81 },
-    { aspect: 'Controls', current: 52, previous: 48 },
-    { aspect: 'UI/UX', current: 69, previous: 55 }
-  ];
-  
-  return {
-    dailyData,
-    categoryData,
-    platformData,
-    severityData,
-    responseTimeData,
-    topIssues,
-    radarData
-  };
-};
 
 const Dashboard = () => {
-  const [selectedTimeRange, setSelectedTimeRange] = useState('30d');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  // Stable, non-random initial state to avoid SSR/client mismatch
-  const getEmptyData = () => {
-    const today = new Date();
-    const dailyData = Array.from({ length: 30 }).map((_, i) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() - (29 - i));
-      return { date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), bugs: 0, crashes: 0, uxIssues: 0, performance: 0, technical: 0, questions: 0, features: 0, total: 0 };
-    });
-    return {
-      dailyData,
-      categoryData: [
-        { name: 'Bug', value: 0, percentage: '0.0' },
-        { name: 'Crash', value: 0, percentage: '0.0' },
-        { name: 'UX Issue', value: 0, percentage: '0.0' },
-        { name: 'Performance', value: 0, percentage: '0.0' },
-        { name: 'Technical', value: 0, percentage: '0.0' },
-        { name: 'Question', value: 0, percentage: '0.0' },
-        { name: 'Feature Request', value: 0, percentage: '0.0' },
-      ],
+  const [selectedTimeRange, setSelectedTimeRange] = useState('48h');
+  
+  // State for all dashboard data - restored
+  const [data, setData] = useState({
+    dailyData: [],
+    categoryData: [],
       platformData: [],
-      severityData: [
-        { severity: 'Critical', count: 0, resolved: 0 },
-        { severity: 'High', count: 0, resolved: 0 },
-        { severity: 'Medium', count: 0, resolved: 0 },
-        { severity: 'Low', count: 0, resolved: 0 },
-      ],
-      responseTimeData: [],
+    severityData: [],
       topIssues: [],
-      priorityIssue: null,
-      priorityIssues: [],
-      radarData: [],
-    } as any;
-  };
-  const [data, setData] = useState(getEmptyData());
-  // Insights state
-  const [insightsCats, setInsightsCats] = useState<any[]>([]);
-  const [insightsWords, setInsightsWords] = useState<any[]>([]);
-  const [issueAnalysis, setIssueAnalysis] = useState<any | null>(null);
-  // Safe state initialization to prevent React errors
+    priorityIssues: [],
+  });
+  const [issueAnalysis, setIssueAnalysis] = useState<any>(null);
+  
   const [insightRecs, setInsightRecs] = useState<any[]>([]);
   const [toastMsg, setToastMsg] = useState<string>('');
-  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
+  const [dbStats, setDbStats] = useState<any>(null);
   const [feedbackTicket, setFeedbackTicket] = useState<any>(null);
-  const [globalSummary, setGlobalSummary] = useState<string>('');
-  
-  // Load from localStorage after component mounts
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedRecs = localStorage.getItem('insightRecs');
-        if (savedRecs) {
-          setInsightRecs(JSON.parse(savedRecs));
-        }
-        const savedSummary = localStorage.getItem('globalSummary');
-        if (savedSummary) {
-          setGlobalSummary(savedSummary);
-        }
-      } catch (error) {
-        console.warn('Failed to load from localStorage:', error);
-      }
+  const [globalSummary, setGlobalSummary] = useState('');
+  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
+
+  const parseHours = (range: string) => {
+    if (range.endsWith('d')) {
+      return parseInt(range.replace('d', '')) * 24;
     }
-  }, []);
+    return parseInt(range);
+  };
 
-  // Remove mock injection; rely on live data only
-
-  // Fetch dismissed tickets
-  useEffect(() => {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-    fetch(base + '/admin/ticket/dismissed')
-      .then(res => res.json())
-      .then(data => {
-        setDismissedIds(new Set(data.dismissed || []));
-      })
-      .catch(() => {});
-  }, []);
+
+  const loadDashboardData = async () => {
+    console.log('🚀 Fetching all dashboard data...');
+    try {
+      const hours = parseHours(selectedTimeRange);
+      const [recsRes, statsRes, dashboardRes, dismissedRes] = await Promise.all([
+        fetch(`${base}/admin/insights?hours=${hours}&limit=100`),
+        fetch(`${base}/admin/db_stats`),
+        fetch(`${base}/admin/dashboard?hours=${hours}`),
+        fetch(`${base}/admin/ticket/dismissed`),
+      ]);
+
+      if (recsRes.ok) {
+        const recsData = await recsRes.json();
+        setInsightRecs(prevRecs => {
+          const existingIds = new Set(prevRecs.map(r => r.id));
+          const newTickets = recsData.recommendations.filter((r: any) => !existingIds.has(r.id));
+          if (newTickets.length > 0) {
+            setToastMsg(`🔔 ${newTickets.length} new tickets arrived!`);
+            setTimeout(() => setToastMsg(''), 5000);
+          }
+          const merged = [...newTickets.map((t:any)=>({...t, __new: true})), ...prevRecs];
+          const final = Array.from(new Map(merged.map(item => [item.id, item])).values()).slice(0, 200);
+          localStorage.setItem('insightRecs', JSON.stringify(final));
+          return final;
+        });
+        if (recsData.global_summary) setGlobalSummary(recsData.global_summary);
+        if (recsData.issue_analysis) setIssueAnalysis(recsData.issue_analysis);
+      }
+
+      if (statsRes.ok) {
+        setDbStats(await statsRes.json());
+      }
+      
+      if (dismissedRes.ok) {
+        const dismissedData = await dismissedRes.json();
+        setDismissedIds(new Set(dismissedData.dismissed || []));
+      }
+
+      if (dashboardRes.ok) {
+        const dashData = await dashboardRes.json();
+        setData(dashData);
+      }
+
+      console.log('✅ Dashboard data refreshed.');
+    } catch (error) {
+      console.error('❌ Failed to load initial data:', error);
+    }
+  };
+  
+  useEffect(() => {
+    // On mount, load from local storage for instant UI, then fetch fresh data
+    try {
+      const savedRecs = localStorage.getItem('insightRecs');
+      if (savedRecs) {
+        setInsightRecs(JSON.parse(savedRecs));
+      }
+    } catch (e) {}
+    
+    loadDashboardData();
+
+    // Setup real-time event listener
+    console.log('⚡️ Connecting to real-time event stream...');
+    const es = new EventSource(`${base}/admin/events`);
+
+    es.onopen = () => {
+      console.log('✅ Real-time connection established.');
+      setToastMsg('⚡️ Real-time connection active');
+      setTimeout(() => setToastMsg(''), 3000);
+    };
+
+    es.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'new_message' || data.type === 'ticket_update') {
+        console.log('📬 New ticket event received:', data);
+        setToastMsg(`🔔 New ticket #${data.number} arrived! Refreshing...`);
+        setTimeout(loadDashboardData, 1000); // Delay to ensure data is in DB
+      }
+    };
+
+    es.onerror = () => {
+      console.error('❌ Real-time connection failed. Please refresh manually.');
+      setToastMsg('❌ Real-time connection lost');
+    };
+
+    return () => {
+      es.close();
+      console.log('🔌 Real-time connection closed.');
+    };
+  }, [selectedTimeRange]); // Reconnect if time range changes
+
+  const manualRefresh = () => {
+    setToastMsg('🔄 Refreshing data...');
+    loadDashboardData();
+  };
 
   // Submit tag correction feedback
   const submitFeedback = async (convId: number, correctIntent: string, correctSeverity: string, notes: string) => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     try {
-      await fetch(base + '/admin/ticket/feedback', {
+      const params = new URLSearchParams({
+        conv_id: convId.toString(),
+        correct_intent: correctIntent,
+        correct_severity: correctSeverity,
+        notes: notes,
+      });
+      await fetch(`${base}/admin/ticket/feedback?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conv_id: convId,
-          correct_intent: correctIntent,
-          correct_severity: correctSeverity,
-          notes: notes
-        })
       });
       setToastMsg('🧠 Feedback saved! Model will learn from this.');
       setTimeout(() => setToastMsg(''), 4000);
@@ -201,279 +151,40 @@ const Dashboard = () => {
 
   // Mark ticket as done/seen (toggle) - INSTANT UI UPDATE
   const markAsSeen = async (convId: number) => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     const isDismissed = dismissedIds.has(convId);
     
-    // UPDATE UI IMMEDIATELY (optimistic update)
+    // Optimistic UI update
+    const newSet = new Set(dismissedIds);
     if (isDismissed) {
-      const newSet = new Set(Array.from(dismissedIds));
       newSet.delete(convId);
-      setDismissedIds(newSet);
       setToastMsg('↩️ Ticket unmarked');
     } else {
-      setDismissedIds(prev => new Set(Array.from(prev).concat(convId)));
+      newSet.add(convId);
       setToastMsg('✅ Ticket marked as done');
     }
+    setDismissedIds(newSet);
     setTimeout(() => setToastMsg(''), 2000);
     
-    // THEN sync with server in background
+    // Sync with server
     try {
       if (isDismissed) {
-        await fetch(base + '/admin/ticket/unmark', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conv_id: convId })
-        });
+        await fetch(`${base}/admin/ticket/unmark?conv_id=${convId}`, { method: 'POST' });
       } else {
-        await fetch(base + '/admin/ticket/mark_seen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conv_id: convId, action: 'dismissed' })
-        });
+        await fetch(`${base}/admin/ticket/mark_seen?conv_id=${convId}&action=dismissed`, { method: 'POST' });
       }
     } catch (e) {
-      console.error('Failed to sync with server:', e);
-      // Revert UI change if server call failed
+      console.error('Failed to sync "Mark as Done" with server:', e);
+      // Revert UI on failure
+      const revertedSet = new Set(dismissedIds);
       if (isDismissed) {
-        setDismissedIds(prev => new Set(Array.from(prev).concat(convId)));
+        revertedSet.add(convId);
       } else {
-        const newSet = new Set(Array.from(dismissedIds));
-        newSet.delete(convId);
-        setDismissedIds(newSet);
+        revertedSet.delete(convId);
       }
+      setDismissedIds(revertedSet);
+      setToastMsg('❌ Sync failed, please try again');
     }
   };
-
-  // Fetch live backend stats for last 48h to reflect real HS data (ONCE on load)
-  useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-    (async () => {
-      try {
-        // Only fetch dashboard data ONCE on initial load
-        const res = await fetch(base + '/admin/dashboard?hours=168');
-        if (res.ok) {
-          const j = await res.json();
-          setData((prev) => ({
-            ...prev,
-            dailyData: j.dailyData?.length ? j.dailyData : prev.dailyData,
-            categoryData: j.categoryData?.length ? j.categoryData : prev.categoryData,
-            platformData: j.platformData || prev.platformData,
-            severityData: j.severityData || prev.severityData,
-            topIssues: j.topIssues || prev.topIssues,
-            priorityIssue: j.priorityIssue || null,
-            priorityIssues: j.priorityIssues || prev.priorityIssues || [],
-          }));
-        }
-      } catch (_) {
-        // keep mock data if backend not available
-      }
-    })();
-  }, []); // Empty dependency array - only run ONCE
-
-  // Fetch LLM-powered Insights (summaries, tags, patterns) with loading and incremental paging
-  useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-    let cancelled = false;
-    let latestNumber: number = 0;
-    (async () => {
-      try {
-        // Only show loading if we have no data yet
-        if (!insightRecs.length) {
-        setInsightRecs([{ __loading: true, __progress: 'Fetching page 1…' } as any]);
-        }
-        const pageSize = 20;
-        let page = 1;
-        let aggregated: any[] = [...insightRecs.filter(r => !r.__loading)]; // Keep existing data
-        while (!cancelled) {
-          const url = `${base}/admin/insights?hours=48&limit=${pageSize}&page=${page}${latestNumber?`&min_number=${latestNumber}`:''}`;
-          if (!cancelled) setInsightRecs((cur)=>[{ __loading: true, __progress: `Fetching page ${page}…` } as any, ...cur.filter((x:any)=>!x.__loading)]);
-          const res = await fetch(url);
-          if (!res.ok) break;
-          const j = await res.json();
-          if (page === 1) {
-            setInsightsCats(j.top_categories || []);
-            setInsightsWords(j.top_keywords || []);
-            // Merge reply counts into issue_analysis
-            const analysis = j.issue_analysis || {};
-            analysis.replied_count = j.replied_count || 0;
-            analysis.unreplied_count = j.unreplied_count || 0;
-            setIssueAnalysis(analysis);
-            if (j.global_summary) {
-              setGlobalSummary(j.global_summary);
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('globalSummary', j.global_summary);
-                } catch {}
-              }
-            }
-          }
-          const batch: any[] = j.recommendations || [];
-          if (!batch.length) break;
-          const seen = new Set(aggregated.map(x=>x.id));
-          for (const r of batch) {
-            if (!seen.has(r.id)) aggregated.push(r);
-            if (typeof r.number === 'number') latestNumber = Math.max(latestNumber, r.number);
-          }
-          const clusterCounts: Record<string, number> = {};
-          for (const r of aggregated) {
-            if (r.cluster_key) clusterCounts[r.cluster_key] = (clusterCounts[r.cluster_key] || 0) + 1;
-          }
-          const recsOut = aggregated
-            .map((r: any) => ({ ...r, similar_count: r.cluster_key ? clusterCounts[r.cluster_key] : 1 }))
-            .sort((a:any,b:any)=> (b.number||0)-(a.number||0));
-          if (!cancelled) {
-            // Preserve UI state - merge new data with existing
-            setInsightRecs(prev => {
-              const existingIds = new Set(prev.filter(r => !r.__loading).map(r => r.id));
-              const newItems = recsOut.filter(r => !existingIds.has(r.id));
-              const updatedItems = prev.filter(r => !r.__loading).map(existing => {
-                const updated = recsOut.find(r => r.id === existing.id);
-                return updated || existing;
-              });
-              const result = [...newItems, ...updatedItems].sort((a,b) => (b.number||0)-(a.number||0));
-              // Save to localStorage for persistence
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('insightRecs', JSON.stringify(result.slice(0, 100)));
-                } catch {}
-              }
-              return result;
-            });
-          }
-          const expectedTotal = Number(j.total || 0);
-          if (expectedTotal && aggregated.length >= expectedTotal) break;
-          page += 1;
-          await new Promise(r=>setTimeout(r, 50)); // Reduced from 150ms for faster paging
-        }
-      } catch (_) { /* no-op */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-  
-  // Simple polling for real-time updates (avoiding SSE complexity)
-  useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-    let pollInterval: NodeJS.Timeout | null = null;
-
-    const refreshTickets = async () => {
-      try {
-        console.log('🔄 Polling for new tickets...');
-        const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1`);
-              if (res.ok) {
-                const j = await res.json();
-                const batch: any[] = j.recommendations || [];
-          console.log(`📥 Received ${batch.length} tickets from API`);
-          
-                setInsightRecs((cur) => {
-            if (!Array.isArray(cur)) cur = [];
-            const seen = new Set(cur.map((x: any) => x?.id).filter(Boolean));
-            const newOnes = batch.filter((x: any) => x?.id && !seen.has(x.id));
-            
-            console.log(`🆕 Found ${newOnes.length} new tickets`);
-            
-            if (newOnes.length > 0) {
-              // Mark as new for highlighting
-              const markedNew = newOnes.map((x: any) => ({ ...x, __new: true }));
-              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS RECEIVED`);
-              setTimeout(() => setToastMsg(''), 8000);
-              
-              // DON'T auto-scroll - let user stay where they are
-              
-              // Merge new tickets at the top
-              const merged = [...markedNew, ...cur].slice(0, 200);
-              
-              // Save to localStorage
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('insightRecs', JSON.stringify(merged));
-            } catch {}
-          }
-              
-              return merged;
-            } else {
-              // No new tickets, just return current with fresh data
-              const updatedItems = batch.map(newItem => {
-                const existing = cur.find(x => x?.id === newItem.id);
-                return existing ? { ...existing, ...newItem } : newItem;
-              });
-              return updatedItems.slice(0, 200);
-            }
-          });
-          
-          // Clear "new" badges after 15 seconds
-          setTimeout(() => {
-            setInsightRecs((cur) => {
-              if (!Array.isArray(cur)) return cur;
-              return cur.map((x: any) => ({ ...x, __new: false }));
-            });
-          }, 15000);
-        } else {
-          console.warn('Failed to fetch tickets:', res.status, res.statusText);
-        }
-      } catch (err) {
-        console.error('❌ Failed to refresh tickets:', err);
-      }
-    };
-
-    // Start aggressive polling every 10 seconds for new tickets
-    pollInterval = setInterval(refreshTickets, 10000);
-    console.log('⏱️ Started polling every 10 seconds for new tickets');
-    
-    // Initial load
-    refreshTickets();
-
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-    };
-  }, []);
-
-  // Manual refresh function for immediate updates
-  const manualRefresh = async () => {
-    setToastMsg('🔄 Checking for new tickets...');
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
-    try {
-      const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1&_t=${Date.now()}`);
-      if (res.ok) {
-        const j = await res.json();
-        const batch: any[] = j.recommendations || [];
-        setInsightRecs(batch);
-        setToastMsg(`✅ Refreshed - ${batch.length} tickets loaded`);
-        setTimeout(() => setToastMsg(''), 3000);
-        
-        // Save to localStorage
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('insightRecs', JSON.stringify(batch));
-          } catch {}
-        }
-      }
-    } catch (err) {
-      setToastMsg('❌ Refresh failed');
-      setTimeout(() => setToastMsg(''), 3000);
-      console.error('Manual refresh failed:', err);
-    }
-  };
-
-  // Calculate summary stats
-  const summaryStats = useMemo(() => {
-    const total = data.dailyData.reduce((acc: number, curr: any) => acc + (curr.total || 0), 0);
-    const avgPerDay = data.dailyData.length ? (total / data.dailyData.length).toFixed(1) : '0.0';
-    const todayTotal = data.dailyData[data.dailyData.length - 1]?.total || 0;
-    const yesterdayTotal = data.dailyData[data.dailyData.length - 2]?.total || 0;
-    const change = yesterdayTotal ? (((todayTotal - yesterdayTotal) / yesterdayTotal) * 100).toFixed(1) : '0.0';
-    
-    return {
-      total,
-      avgPerDay,
-      todayTotal,
-      change,
-      resolved: Math.floor(total * 0.68),
-      pending: Math.floor(total * 0.32),
-      avgResponseTime: '3.2h'
-    };
-  }, [data]);
   
   // Colors for charts
   const COLORS = ['#8b5cf6', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#6366f1'];
@@ -496,40 +207,10 @@ const Dashboard = () => {
   
   // Build a concise fallback description when LLM summary is absent
   const getShortDescription = (r: any): string => {
-    try {
-      const cap = (s: string) => (s && typeof s === 'string') ? (s.charAt(0).toUpperCase() + s.slice(1)) : '';
-      const sev = String(r?.severity_bucket || 'medium').toLowerCase();
-      const categories = Array.isArray(r?.categories) ? r.categories : [];
-      const primaryCat = (categories[0] ? String(categories[0]).replace(/_/g, ' ') : 'support request');
-      const intentRaw: string | undefined = (Array.isArray(r?.suggested_tags) ? r.suggested_tags.find((t: string)=>/^intent:/i.test(t)) : undefined);
-      const intent = intentRaw ? String(intentRaw.split(':',2)[1] || '').toLowerCase() : '';
-      const intentMap: Record<string,string> = {
-        'refund_request': 'refund request',
-        'cancel_subscription': 'subscription cancellation',
-        'account_access': 'account access issue',
-        'account_deletion': 'account deletion request',
-        'recover_progress': 'recover lost progress',
-        'bug_report': 'bug/crash report',
-        'performance_issue': 'performance issue',
-        'feature_request': 'feature request',
-        'how_to': 'how‑to question',
-        'device_migration': 'device migration/restore',
-      };
-      const platform = r?.entities?.platform ? String(r.entities.platform) : '';
-      const appv = r?.entities?.app_version ? `v${r.entities.app_version}` : '';
-      const lvl = (typeof r?.entities?.level === 'number') ? `lvl ${r.entities.level}` : '';
-      const similar = (typeof r?.similar_count === 'number' && r.similar_count > 1) ? `${r.similar_count} similar` : '';
-      const parts = [
-        `${sev} ${intent ? intentMap[intent] || intent : primaryCat}`.trim(),
-        platform ? `on ${platform}` : '',
-        appv,
-        lvl,
-      ].filter(Boolean);
-      const main = parts.join(' ');
-      return similar ? `${cap(main)} — ${similar}` : cap(main);
-    } catch {
-      return 'Support request';
-    }
+    if (r.one_liner) return r.one_liner;
+    if (r.subject) return r.subject;
+    if (r.escalation_reason) return r.escalation_reason;
+    return 'No description available.';
   };
   
   return (
@@ -1143,8 +824,8 @@ const Dashboard = () => {
                         {(r.existing_tags || []).slice(0, 3).map((t: string) => (
                           <span key={`hs-${t}`} className="px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                             🏷️ {t}
-                          </span>
-                        ))}
+                      </span>
+                    ))}
                     {(r.suggested_tags || [])
                           .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:') && !t.startsWith('sentiment:'))
                           .slice(0, 6)
