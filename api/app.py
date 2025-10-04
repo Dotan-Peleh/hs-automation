@@ -1886,21 +1886,69 @@ def cluster_conversations(cluster_key: str, hours: int = 48):
 def backfill_get(limit_pages: int = 1):
     return backfill(limit_pages=limit_pages)
 
-# Backfill more pages quickly (all-time crawl via paginated calls)
+# Backfill ALL historical tickets from Help Scout (learning mode)
 @app.get("/admin/backfill_all")
-def backfill_all(max_pages: int = 50):
-    total = 0
-    last_saved = 0
-    for p in range(1, max(1, max_pages)+1):
-        r = backfill(limit_pages=p)
-        if not r.get("ok"):
-            return {"ok": False, "saved": total, "error": r.get("error")}
-        total = r.get("saved", total)
-        # if no new items were saved for this page, stop early (delta complete)
-        if total == last_saved:
+def backfill_all(max_pages: int = 999):
+    """
+    Fetch ALL tickets from Help Scout history for learning and pattern analysis.
+    Keeps going until no more pages or max_pages reached.
+    """
+    total_saved = 0
+    page = 1
+    
+    while page <= max_pages:
+        try:
+            print(f"📥 Fetching page {page} from Help Scout...")
+            data = helpscout.list_conversations(page=page)
+        except Exception as e:
+            return {"ok": False, "saved": total_saved, "page": page, "error": f"Help Scout API error: {e}"}
+        
+        items = data.get("_embedded", {}).get("conversations", [])
+        if not items:
+            print(f"✅ No more tickets. Stopped at page {page}")
             break
-        last_saved = total
-    return {"ok": True, "saved": total}
+            
+        # Save this page of tickets
+        with get_session() as s:
+            page_saved = 0
+            for c in items:
+                conv_id = c.get("id")
+                number = c.get("number")
+                subject = c.get("subject")
+                last_text = helpscout.extract_text(c)
+                raw_tags = c.get("tags") or []
+                tag_names = [t.get("tag") if isinstance(t, dict) else str(t) for t in raw_tags]
+                tags_str = ",".join([t for t in tag_names if t])
+                
+                # Parse timestamp
+                updated_at_dt = None
+                try:
+                    updated_iso = c.get("updatedAt") or c.get("createdAt")
+                    if updated_iso:
+                        updated_at_dt = datetime.fromisoformat(updated_iso.replace("Z","+00:00")).replace(tzinfo=None)
+                except Exception:
+                    pass
+                
+                if conv_id:
+                    # Check if we already have this ticket
+                    existing = s.query(HsConversation).get(conv_id)
+                    if not existing:
+                        # New ticket - save it
+                        upsert_hs_conversation(s, conv_id, number, subject, last_text, tags_str, updated_at_dt)
+                        page_saved += 1
+                        total_saved += 1
+            
+            print(f"✅ Page {page}: Saved {page_saved} new tickets (Total: {total_saved})")
+        
+        # Check if there are more pages
+        next_link = data.get("_links", {}).get("next")
+        if not next_link:
+            print(f"✅ Reached end of Help Scout history at page {page}")
+            break
+            
+        page += 1
+    
+    return {"ok": True, "saved": total_saved, "pages_fetched": page, "message": f"Fetched {total_saved} historical tickets from Help Scout for learning"}
 
 
 # Vector indexing

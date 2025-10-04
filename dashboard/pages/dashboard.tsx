@@ -667,9 +667,37 @@ const Dashboard = () => {
                 }
               }}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 font-semibold"
-              title="Force fetch new tickets from Help Scout API"
+              title="Fetch recent tickets from Help Scout API"
             >
-              🔎 Fetch New
+              🔍 Fetch New
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('Fetch ALL historical tickets from Help Scout? This will improve learning from past patterns. May take a few minutes.')) {
+                  return;
+                }
+                setToastMsg('🧠 Loading ALL historical tickets...');
+                try {
+                  const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+                  const res = await fetch(`${base}/admin/backfill_all?max_pages=999`);
+                  if (res.ok) {
+                    const result = await res.json();
+                    setToastMsg(`🎉 SUCCESS! Loaded ${result.saved || 0} historical tickets. System is learning from all data!`);
+                    setTimeout(() => setToastMsg(''), 10000);
+                    setTimeout(manualRefresh, 2000);
+                  } else {
+                    setToastMsg('❌ Historical load failed');
+                    setTimeout(() => setToastMsg(''), 5000);
+                  }
+                } catch (err) {
+                  setToastMsg('❌ Load error');
+                  setTimeout(() => setToastMsg(''), 5000);
+                }
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 font-semibold"
+              title="Fetch ALL historical tickets for learning (one-time setup)"
+            >
+              🧠 Load History
             </button>
           </div>
         </div>
