@@ -1145,13 +1145,19 @@ def insights(
                     if any(stop in line.lower() for stop in ['reply', 'sincerely', 'google play team', 'posting guidelines', 'contact support']):
                         break
                     
-                    # Skip the header line itself and empty lines
-                    if 'new beta feedback' in line.lower() or 'on oct' in line.lower() or len(line) < 3:
+                    # Skip the header line itself, dates, and greetings
+                    if any(skip in line.lower() for skip in ['new beta feedback', 'on oct', 'hello', 'hi,', 'dear']):
+                        continue
+                    if len(line) < 3:
                         continue
                     
                     # Clean and add this line
                     clean = _re.sub(r'<[^>]+>', '', line)
                     clean = _re.sub(r'\s+', ' ', clean).strip()
+                    
+                    # Skip if it's just a greeting
+                    if clean.lower() in ['hello', 'hi', 'dear']:
+                        continue
                     
                     if len(clean) >= 3:
                         feedback_lines.append(clean)
@@ -1192,29 +1198,32 @@ def insights(
             one_liner = actual_feedback
             print(f"✅ REAL USER MESSAGE #{c.number}: '{one_liner}'")
             
-            # Add tags based on keywords IN THE ACTUAL FEEDBACK
+            # Add tags based on keywords IN THE ACTUAL FEEDBACK (check if not already present)
             feedback_lower = actual_feedback.lower()
+            tags_to_add = set()
             
             # Crash/freeze/bug keywords
             if any(word in feedback_lower for word in ['crash', 'crashing', 'crashed', 'crashes']):
-                if 'tag:crash' not in custom_wo_intent:
-                    custom_wo_intent.append('tag:crash')
+                tags_to_add.add('tag:crash')
             if any(word in feedback_lower for word in ['freeze', 'frozen', 'freezing', 'stuck']):
-                if 'tag:freeze' not in custom_wo_intent:
-                    custom_wo_intent.append('tag:freeze')
+                tags_to_add.add('tag:freeze')
             
             # Performance keywords
             if any(word in feedback_lower for word in ['slow', 'lag', 'laggy', 'lagging', 'fps']):
-                if 'tag:performance' not in custom_wo_intent:
-                    custom_wo_intent.append('tag:performance')
+                tags_to_add.add('tag:performance')
             
             # UX/annoyance keywords
             if any(word in feedback_lower for word in ['pop up', 'popup', 'too many', 'irritating', 'annoying']):
-                if 'tag:ux_issue' not in custom_wo_intent:
-                    custom_wo_intent.append('tag:ux_issue')
+                tags_to_add.add('tag:ux_issue')
             
-            # Update suggested_tags with new tags from feedback
-            suggested_tags = [f"sev:{bucket}"] + custom_wo_intent
+            # Add new tags without duplicates
+            existing_tags_set = set(custom_wo_intent)
+            for tag in tags_to_add:
+                if tag not in existing_tags_set:
+                    custom_wo_intent.append(tag)
+            
+            # Update suggested_tags with deduplicated tags
+            suggested_tags = [f"sev:{bucket}"] + list(set(custom_wo_intent))
         else:
             one_liner = (c.subject or 'Support Request')[:100]
             print(f"⚠️ No content found for #{c.number}, using subject: '{one_liner}'")

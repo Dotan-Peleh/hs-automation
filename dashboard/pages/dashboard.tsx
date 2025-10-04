@@ -1127,7 +1127,8 @@ const Dashboard = () => {
                         </span>
                       )}
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold text-white ${
-                      r.severity_bucket === 'high' ? 'bg-red-600' :
+                      r.severity_bucket === 'critical' ? 'bg-red-600' :
+                      r.severity_bucket === 'high' ? 'bg-orange-500' :
                       r.severity_bucket === 'medium' ? 'bg-blue-500' : 'bg-green-500'
                         }`}>
                           {(r.severity_bucket || 'low').toUpperCase()}
@@ -1166,8 +1167,9 @@ const Dashboard = () => {
                             🏷️ {t}
                           </span>
                         ))}
-                    {(r.suggested_tags || [])
-                          .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:') && !t.startsWith('sentiment:'))
+                    {/* Deduplicate tags and filter */}
+                    {Array.from(new Set(r.suggested_tags || []))
+                          .filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:') && !t.startsWith('sentiment:') && !t.startsWith('platform:'))
                           .slice(0, 6)
                       .map((t: string) => {
                             const lower = t.toLowerCase();
