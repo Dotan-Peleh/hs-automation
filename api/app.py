@@ -1121,121 +1121,41 @@ def insights(
         suggested_tags = [f"sev:{bucket}"] + custom_wo_intent
         # pass intent back into one-liner context (not as a tag to UI)
         intent_injected = suggested_tags + ([f"intent:{intent_val}"] if intent_val else [])
-        # Generate meaningful one-liner description
-        one_liner = build_one_liner(raw, entities, cats, extra, bucket, intent_injected)
         
-        # If one-liner is empty or too generic, create a better one from actual message content
-        # Check for generic patterns that aren't helpful
-        is_generic = (
-            not one_liner or 
-            len(one_liner.strip()) < 15 or 
-            one_liner.strip().lower() in ['support request', 'bug/crash report', 'support', 'bug report', 'crash report'] or
-            one_liner.strip().lower().endswith(' - needs review') or
-            one_liner.strip().lower().startswith('support request on') or
-            one_liner.strip().lower().startswith('bug report on') or
-            one_liner.strip().lower().startswith('crash report on')
-        )
+        # ALWAYS extract description from actual message content FIRST
+        one_liner = None
+        message_content = (c.last_text or c.subject or '').strip()
         
-        if is_generic:
-            # Extract key issue from the ACTUAL MESSAGE CONTENT
-            message_content = (c.last_text or c.subject or '').strip()
-            print(f"DEBUG: Extracting description for #{c.number}. Content length: {len(message_content)}")
-            print(f"DEBUG: First 200 chars: {message_content[:200]}")
+        if len(message_content) > 20:
+            lines = message_content.split('\n')
             
-            if len(message_content) > 20:
-                # Clean up and extract main issue from real user message
-                lines = message_content.split('\n')
+            # Extract first meaningful line that isn't metadata
+            for line in lines:
+                line = line.strip()
+                if not line or len(line) < 20:
+                    continue
+                    
+                # Skip metadata/boilerplate
+                skip_patterns = ['userid', 'user id', 'device =', 'os =', 'from:', 'to:', 'hello,', 'sincerely', 'thank you', 'regards', '@gmail', '@google', 'font-family', '<div', '<br>']
+                if any(skip in line.lower() for skip in skip_patterns):
+                    continue
                 
-                # First pass: Look for the ACTUAL user-written content
-                for line in lines:
-                    line = line.strip()
-                    
-                    # Skip obvious metadata/headers (be very aggressive)
-                    if not line or len(line) < 15:
-                        continue
-                    if any(skip in line.lower() for skip in [
-                        'userid', 'user id', 'distinct_id', 'device =', 'os =', 'device=', 'os=',
-                        'much regards', 'sincerely', 'thank you for your help', 'thanks,',
-                        'google play console', 'hello,', 'from noreply', 'from:', 'to:',
-                        'font-family', 'aptos', 'msfontservice', 'div style', '<br>', '</div>',
-                        'roboto', 'arial', 'helvetica', 'sans-serif', 'gmail.com', '@gmail',
-                        '@google.com', 'noreply', 'jessica', 'mary', 'sheryl', 'gerda',
-                        'best regards', 'kind regards', 'regards,'
-                    ]):
-                        continue
-                    
-                    # Also skip if line is ALL CAPS (likely header)
-                    if line.isupper() and len(line) > 5:
-                        continue
-                    
-                    # Clean the line
-                    clean = _re.sub(r'<[^>]+>', '', line)  # Remove HTML
-                    clean = _re.sub(r'\s+', ' ', clean).strip()  # Normalize whitespace
-                    
-                    # Remove common email prefixes and boilerplate
-                    prefixes_to_remove = [
-                        r'^(hello,?|hi,?|dear,?)\s*',
-                        r'^(we wanted to let you know that)\s*',
-                        r'^(a user wrote new beta feedback)\s*',
-                        r'^(new beta feedback for your app)\s*',
-                        r'^(you can write a private reply)\s*',
-                        r'^(on oct \d+, 20\d+ at \d+:\d+ (am|pm) gmt)\s*',
-                    ]
-                    for pattern in prefixes_to_remove:
-                        clean = _re.sub(pattern, '', clean, flags=_re.IGNORECASE)
-                        clean = clean.strip()
-                    
-                    print(f"DEBUG: Cleaned line: '{clean[:100]}...'") if len(clean) > 100 else print(f"DEBUG: Cleaned line: '{clean}'")
-                    
-                    # If this line has substantial content, use it
-                    if len(clean) > 20 and len(clean) < 250:
-                        one_liner = clean
-                        break
+                # Clean and extract
+                clean = _re.sub(r'<[^>]+>', '', line)
+                clean = _re.sub(r'\s+', ' ', clean).strip()
                 
-                # If still no good description, extract actual feedback content
-                if not one_liner or len(one_liner.strip()) < 15:
-                    # Look for actual user feedback (beta feedback, reviews, comments)
-                    feedback_indicators = [
-                        'beta feedback', 'new beta feedback', 'user wrote', 'feedback:', 
-                        'review:', 'comment:', 'however', 'but', 'unfortunately'
-                    ]
-                    problem_indicators = [
-                        'disappeared', 'missing', 'not working', 'crash', 'freeze', 'stuck', 
-                        'problem', 'issue', 'bug', 'error', 'broken', 'won\'t', 'can\'t', 'cannot',
-                        'irritating', 'annoying', 'frustrating', 'ridiculously', 'too many', 'pop up'
-                    ]
-                    
-                    for line in lines[:10]:  # Check more lines for beta feedback
-                        line = line.strip()
-                        
-                        # Clean HTML first
-                        clean_line = _re.sub(r'<[^>]+>', '', line)  # Remove HTML tags
-                        clean_line = _re.sub(r'\s+', ' ', clean_line).strip()  # Normalize spaces
-                        
-                        # Check if this line has actual feedback content
-                        if len(clean_line) > 20 and len(clean_line) < 250:
-                            # Prioritize lines with feedback indicators or problem words
-                            has_feedback = any(indicator in clean_line.lower() for indicator in feedback_indicators)
-                            has_problem = any(word in clean_line.lower() for word in problem_indicators)
-                            
-                            if has_feedback or has_problem:
-                                # Extract the meaningful part
-                                # Remove common prefixes
-                                clean_line = _re.sub(r'^(hello,?|hi,?|dear,?|sincerely,?|regards,?|thank you,?)\\s*', '', clean_line, flags=_re.IGNORECASE)
-                                clean_line = _re.sub(r'^(we wanted to let you know that|a user wrote|new beta feedback for your app)\\s*', '', clean_line, flags=_re.IGNORECASE)
-                                
-                                if len(clean_line) > 15:
-                                    one_liner = clean_line[:150]  # Truncate if too long
-                                    break
-            
-            # Ultimate fallback - but make it more descriptive
-            if not one_liner or len(one_liner.strip()) < 10:
-                platform_text = f" on {entities.get('platform', 'mobile')}" if entities.get('platform') else ''
-                intent_text = intent_val.replace('_', ' ') if intent_val else 'support request'
-                one_liner = f"{intent_text.title()}{platform_text} - needs review"
-                print(f"WARNING: Using generic fallback for #{c.number}: '{one_liner}'")
-            else:
-                print(f"✅ Extracted real description for #{c.number}: '{one_liner[:100]}'")
+                if len(clean) > 20 and len(clean) < 200:
+                    one_liner = clean[:150]
+                    print(f"✅ Extracted description from message for #{c.number}: '{one_liner}'")
+                    break
+        
+        # Only use build_one_liner as fallback if extraction failed
+        if not one_liner:
+            one_liner = build_one_liner(raw, entities, cats, extra, bucket, intent_injected)
+            print(f"⚠️ Using build_one_liner fallback for #{c.number}: '{one_liner}'")
+        
+        # Description extraction complete - use what we got above
+        
         # best-effort: fetch customer name for display
         customer_name = None
         try:
