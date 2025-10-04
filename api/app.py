@@ -1230,6 +1230,54 @@ def insights(
         
         # Description extraction complete - use what we got above
         
+        # --- START LLM-FIRST ENRICHMENT ---
+        
+        one_liner = ""
+        llm_tags = []
+        
+        # Always try to enrich with LLM first
+        extra = llm.enrich(raw) if llm.is_enabled() else {}
+        
+        if extra.get("summary"):
+            one_liner = extra["summary"]
+            llm_tags.extend(extra.get("tags", []))
+            if extra.get("intent"):
+                llm_tags.append(f"intent:{extra['intent']}")
+            if extra.get("root_cause"):
+                llm_tags.append(f"cause:{extra['root_cause']}")
+            print(f"✅ LLM enriched #{c.number}: '{one_liner}' with tags: {llm_tags}")
+        
+        # If LLM fails, fall back to simple extraction
+        if not one_liner:
+            print(f"⚠️ LLM failed for #{c.number}. Falling back to simple extraction.")
+            lines = raw.split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line or len(line) < 15: continue
+                
+                skip_keywords = [
+                    'userid', 'user id', 'device =', 'os =', 'from:', 'to:', 'hello,', 
+                    'sincerely', 'thank you', 'regards', '@', 'google play console',
+                    'font-family', '<div', '<br>', 'new beta feedback', 'on oct'
+                ]
+                if any(skip in line.lower() for skip in skip_keywords): continue
+
+                clean = _re.sub(r'<[^>]+>', '', line).strip()
+                clean = _re.sub(r'\s+', ' ', clean).strip()
+
+                if len(clean) > 15:
+                    one_liner = clean[:200]
+                    break
+            
+            if not one_liner:
+                one_liner = c.subject or "No description available"
+        
+        # Combine LLM tags with other rule-based tags, ensuring no duplicates
+        final_tags = list(set(custom_wo_intent + llm_tags))
+        suggested_tags = [f"sev:{bucket}"] + final_tags
+
+        # --- END LLM-FIRST ENRICHMENT ---
+        
         # best-effort: fetch customer name for display
         customer_name = None
         try:

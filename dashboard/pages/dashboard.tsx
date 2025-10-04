@@ -438,11 +438,11 @@ const Dashboard = () => {
       }
     };
 
-    // Poll every 1 minute for new tickets (not too aggressive)
+    // Every 1 minute, fetch the latest tickets and ADD them to the list
     pollInterval = setInterval(refreshTickets, 60000);
     console.log('⏱️ Started polling every 1 minute for new tickets');
     
-    // Initial load
+    // Initial load - don't clear localStorage, just fetch and merge
     refreshTickets();
     
     // Load database stats

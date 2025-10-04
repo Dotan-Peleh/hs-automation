@@ -11,20 +11,28 @@ HEADERS = {
 }
 
 SYSTEM = (
-    "You are a support incident enricher. Read the latest customer message and summarize the core issue in one short sentence. "
-    "Then suggest up to 2 short categories (lowercase, snake_case), and extract lightweight fields if present: platform (android/ios/web/desktop), app_version, level (integer). "
-    "If a user identifier is present (e.g., 'user:abc123', 'distinct_id abc123', 'id abc123'), extract it as distinct_id (string). "
-    "Output STRICT JSON only with keys: summary (string), categories (array of strings), platform (string|null), app_version (string|null), level (integer|null), distinct_id (string|null). No prose."
+    "You are a specialized AI assistant for a game support team. Your task is to analyze a user's support ticket and extract structured information. "
+    "1. **Identify the user's core intent** (e.g., 'bug_report', 'billing_issue', 'lost_progress', 'feedback', 'question'). "
+    "2. **Determine the root cause** of the issue in a few words (e.g., 'game crash after update', 'accidental currency use', 'pop-up ads irritating'). "
+    "3. **Generate 3-4 relevant keywords/tags** as a list of strings (e.g., ['crash', 'level-5', 'android', 'update']). "
+    "4. **Write a very short, one-sentence summary** of the user's message (max 15 words). This should be the actual user issue, not a generic category. "
+    "Output STRICT JSON only with the keys: 'intent' (string), 'root_cause' (string), 'tags' (array of strings), and 'summary' (string). No extra text or explanations."
 )
 
 
 def is_enabled() -> bool:
-    return bool(ANTHROPIC_API_KEY)
+    if ANTHROPIC_API_KEY:
+        return True
+    print("⚠️ LLM enrichment is DISABLED. ANTHROPIC_API_KEY is not set.")
+    return False
 
 
 def enrich(text: str) -> dict:
     if not is_enabled() or not text:
         return {}
+    
+    print(f"🧠 Calling LLM to enrich ticket content (first 100 chars): '{text[:100]}...'")
+    
     try:
         payload = {
             "model": ANTHROPIC_MODEL,
@@ -39,6 +47,9 @@ def enrich(text: str) -> dict:
         content_blocks = data.get("content") or []
         raw = "".join([b.get("text", "") for b in content_blocks if isinstance(b, dict)])
         raw = raw.strip()
+        
+        print(f"🤖 LLM raw response: {raw}")
+        
         # try parse JSON; if the model wrapped with code fences, strip them
         if raw.startswith("```"):
             raw = raw.strip("`\n ")
@@ -49,15 +60,20 @@ def enrich(text: str) -> dict:
         # minimal sanitation
         if not isinstance(parsed, dict):
             return {}
+        
+        # Ensure all expected keys are present
         return {
             "summary": parsed.get("summary"),
-            "categories": parsed.get("categories") or [],
+            "intent": parsed.get("intent"),
+            "root_cause": parsed.get("root_cause"),
+            "tags": parsed.get("tags") or [],
             "platform": parsed.get("platform"),
             "app_version": parsed.get("app_version"),
             "level": parsed.get("level"),
             "distinct_id": (parsed.get("distinct_id") or _extract_id_like(parsed.get("summary") or "") ),
         }
-    except Exception:
+    except Exception as e:
+        print(f"❌ LLM enrichment FAILED. Error: {e}")
         return {}
 
 
