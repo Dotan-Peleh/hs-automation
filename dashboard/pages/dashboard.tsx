@@ -360,16 +360,19 @@ const Dashboard = () => {
         console.log('🔄 Polling for new tickets...');
         const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1`);
               if (res.ok) {
-                const j = await res.json();
-                const batch: any[] = j.recommendations || [];
+          const j = await res.json();
+          const batch: any[] = j.recommendations || [];
           console.log(`📥 Received ${batch.length} tickets from API`);
           
-                setInsightRecs((cur) => {
+          let hasNewTickets = false;
+          
+          setInsightRecs((cur) => {
             if (!Array.isArray(cur)) cur = [];
             const seen = new Set(cur.map((x: any) => x?.id).filter(Boolean));
             const newOnes = batch.filter((x: any) => x?.id && !seen.has(x.id));
             
             console.log(`🆕 Found ${newOnes.length} new tickets`);
+            hasNewTickets = newOnes.length > 0;
             
             // ALWAYS use fresh batch from server, don't try to merge
             // This ensures descriptions, tags, and all data is up-to-date
@@ -377,30 +380,6 @@ const Dashboard = () => {
               const wasNew = newOnes.some((n: any) => n.id === item.id);
               return { ...item, __new: wasNew };
             });
-            
-            if (newOnes.length > 0) {
-              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS - Updating metrics...`);
-              setTimeout(() => setToastMsg(''), 8000);
-              
-              // Reload ALL dashboard data to update metrics/aggregates
-              setTimeout(async () => {
-                try {
-                  const res2 = await fetch(`${base}/admin/insights?hours=${selectedTimeRange}&limit=100`);
-                  if (res2.ok) {
-                    const fullData = await res2.json();
-                    // Update all dashboard metrics
-                    if (fullData.insights) setData(fullData.insights);
-                    if (fullData.categories) setInsightsCats(fullData.categories);
-                    if (fullData.words) setInsightsWords(fullData.words);
-                    if (fullData.issue_analysis) setIssueAnalysis(fullData.issue_analysis);
-                    if (fullData.global_summary) setGlobalSummary(fullData.global_summary);
-                    console.log('✅ Dashboard metrics updated with new data');
-                  }
-                } catch (err) {
-                  console.warn('Failed to reload dashboard metrics:', err);
-                }
-              }, 1000);
-            }
             
             // Save to localStorage
             if (typeof window !== 'undefined') {
@@ -412,13 +391,37 @@ const Dashboard = () => {
             return freshData;
           });
           
-          // Clear "new" badges after 15 seconds
-          setTimeout(() => {
-            setInsightRecs((cur) => {
-              if (!Array.isArray(cur)) return cur;
-              return cur.map((x: any) => ({ ...x, __new: false }));
-            });
-          }, 15000);
+          // Handle new tickets AFTER state update
+          if (hasNewTickets) {
+            setToastMsg(`🔔 New tickets received - Updating metrics...`);
+            setTimeout(() => setToastMsg(''), 8000);
+            
+            // Reload ALL dashboard data
+            setTimeout(async () => {
+              try {
+                const res2 = await fetch(`${base}/admin/insights?hours=${selectedTimeRange}&limit=100`);
+                if (res2.ok) {
+                  const fullData = await res2.json();
+                  if (fullData.insights) setData(fullData.insights);
+                  if (fullData.categories) setInsightsCats(fullData.categories);
+                  if (fullData.words) setInsightsWords(fullData.words);
+                  if (fullData.issue_analysis) setIssueAnalysis(fullData.issue_analysis);
+                  if (fullData.global_summary) setGlobalSummary(fullData.global_summary);
+                  console.log('✅ Dashboard metrics updated');
+                }
+              } catch (err) {
+                console.warn('Failed to reload metrics:', err);
+              }
+            }, 1000);
+            
+            // Clear "new" badges after 15 seconds
+            setTimeout(() => {
+              setInsightRecs((cur) => {
+                if (!Array.isArray(cur)) return cur;
+                return cur.map((x: any) => ({ ...x, __new: false }));
+              });
+            }, 15000);
+          }
         } else {
           console.warn('Failed to fetch tickets:', res.status, res.statusText);
         }
@@ -1117,12 +1120,11 @@ const Dashboard = () => {
                         </span>
                       )}
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold text-white ${
-                      r.severity_bucket === 'critical' ? 'bg-red-600' :
-                      r.severity_bucket === 'high' ? 'bg-orange-500' :
-                          r.severity_bucket === 'medium' ? 'bg-blue-500' : 'bg-green-500'
+                      r.severity_bucket === 'high' ? 'bg-red-600' :
+                      r.severity_bucket === 'medium' ? 'bg-blue-500' : 'bg-green-500'
                         }`}>
                           {(r.severity_bucket || 'low').toUpperCase()}
-                      </span>
+                        </span>
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-white border border-gray-300">
                           {getIntentLabel()}
                         </span>

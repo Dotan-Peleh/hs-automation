@@ -588,7 +588,7 @@ def insights(
                 cluster_meta[ck] = {
                     "title": (c.subject or (raw[:60] + "...")),
                     "category": (cats or ["other"])[0].replace("_", " ").title(),
-                    "severity": {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}.get(bucket, "Medium"),
+                    "severity": {"high": "High", "medium": "Medium", "low": "Low"}.get(bucket, "Medium"),
                     "last_seen": c.updated_at.isoformat() if c.updated_at else None,
                 }
             else:
@@ -1122,51 +1122,102 @@ def insights(
         # pass intent back into one-liner context (not as a tag to UI)
         intent_injected = suggested_tags + ([f"intent:{intent_val}"] if intent_val else [])
         
-        # Extract the ACTUAL user message - what they wrote!
+        # Extract ONLY the actual user feedback (from the feedback box in beta emails)
         raw_text = (c.last_text or '').strip()
         
-        # Clean it up and extract the real content
-        real_content = []
-        if raw_text:
+        # For beta feedback emails, find the ACTUAL feedback content
+        # Look for text between "New beta feedback" and "Reply" button or signature
+        actual_feedback = None
+        if 'beta feedback' in raw_text.lower():
+            # Try to find the feedback box content
+            lines = raw_text.split('\n')
+            in_feedback_section = False
+            feedback_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                
+                # Start capturing after "New beta feedback" header
+                if 'new beta feedback' in line.lower() or in_feedback_section:
+                    in_feedback_section = True
+                    
+                    # Stop if we hit reply button, signature, or footer
+                    if any(stop in line.lower() for stop in ['reply', 'sincerely', 'google play team', 'posting guidelines', 'contact support']):
+                        break
+                    
+                    # Skip the header line itself and empty lines
+                    if 'new beta feedback' in line.lower() or 'on oct' in line.lower() or len(line) < 3:
+                        continue
+                    
+                    # Clean and add this line
+                    clean = _re.sub(r'<[^>]+>', '', line)
+                    clean = _re.sub(r'\s+', ' ', clean).strip()
+                    
+                    if len(clean) >= 3:
+                        feedback_lines.append(clean)
+            
+            if feedback_lines:
+                actual_feedback = ' '.join(feedback_lines)[:200]
+                print(f"✅ EXTRACTED BETA FEEDBACK #{c.number}: '{actual_feedback}'")
+        
+        # If not beta feedback or extraction failed, get regular message content
+        if not actual_feedback:
+            real_content = []
             lines = raw_text.split('\n')
             for line in lines:
                 line = line.strip()
                 
-                # Skip empty or very short lines
+                # Skip metadata
                 if not line or len(line) < 10:
                     continue
-                
-                # Skip metadata lines
-                if any(metadata in line.lower() for metadata in [
-                    'userid =', 'user id =', 'device =', 'os =', 'distinct_id',
-                    '@gmail.com', '@google.com', 'noreply',
-                ]):
+                if any(skip in line.lower() for skip in ['userid =', 'device =', 'os =', '@gmail', '@google', 'noreply']):
+                    continue
+                if line.lower() in ['hello', 'hi', 'sincerely', 'regards', 'thank you', 'thanks']:
                     continue
                 
-                # Skip salutations/closings
-                if line.lower() in ['hello', 'hi', 'dear', 'sincerely', 'regards', 'thank you', 'thanks']:
-                    continue
+                # Clean and add
+                clean = _re.sub(r'<[^>]+>', '', line)
+                clean = _re.sub(r'\s+', ' ', clean).strip()
                 
-                # Clean HTML
-                clean_line = _re.sub(r'<[^>]+>', '', line)
-                clean_line = _re.sub(r'\s+', ' ', clean_line).strip()
-                
-                # If line has substance, add it
-                if len(clean_line) >= 10:
-                    real_content.append(clean_line)
-                    
-                # Stop after we have enough (max 3 sentences)
+                if len(clean) >= 10:
+                    real_content.append(clean)
                 if len(real_content) >= 3:
                     break
+            
+            if real_content:
+                actual_feedback = ' '.join(real_content)[:200]
         
-        # Join the real content into a description
-        if real_content:
-            one_liner = ' '.join(real_content)[:200]  # Take first 200 chars of actual content
+        # Set the one_liner from actual feedback
+        if actual_feedback:
+            one_liner = actual_feedback
             print(f"✅ REAL USER MESSAGE #{c.number}: '{one_liner}'")
+            
+            # Add tags based on keywords IN THE ACTUAL FEEDBACK
+            feedback_lower = actual_feedback.lower()
+            
+            # Crash/freeze/bug keywords
+            if any(word in feedback_lower for word in ['crash', 'crashing', 'crashed', 'crashes']):
+                if 'tag:crash' not in custom_wo_intent:
+                    custom_wo_intent.append('tag:crash')
+            if any(word in feedback_lower for word in ['freeze', 'frozen', 'freezing', 'stuck']):
+                if 'tag:freeze' not in custom_wo_intent:
+                    custom_wo_intent.append('tag:freeze')
+            
+            # Performance keywords
+            if any(word in feedback_lower for word in ['slow', 'lag', 'laggy', 'lagging', 'fps']):
+                if 'tag:performance' not in custom_wo_intent:
+                    custom_wo_intent.append('tag:performance')
+            
+            # UX/annoyance keywords
+            if any(word in feedback_lower for word in ['pop up', 'popup', 'too many', 'irritating', 'annoying']):
+                if 'tag:ux_issue' not in custom_wo_intent:
+                    custom_wo_intent.append('tag:ux_issue')
+            
+            # Update suggested_tags with new tags from feedback
+            suggested_tags = [f"sev:{bucket}"] + custom_wo_intent
         else:
-            # If we truly can't extract anything, use subject
             one_liner = (c.subject or 'Support Request')[:100]
-            print(f"⚠️ No message content, using subject for #{c.number}: '{one_liner}'")
+            print(f"⚠️ No content found for #{c.number}, using subject: '{one_liner}'")
         
         # Description extraction complete - use what we got above
         
@@ -1393,7 +1444,7 @@ def insights(
         try:
             # Always use simple summary (works without LLM)
             total_tickets = len(recs)
-            high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
+            high_critical = len([r for r in recs if r.get('severity_bucket') == 'high'])
             intents = {}
             for r in recs:
                 intent = r.get('intent') or 'unknown'
