@@ -371,33 +371,45 @@ const Dashboard = () => {
             
             console.log(`🆕 Found ${newOnes.length} new tickets`);
             
+            // ALWAYS use fresh batch from server, don't try to merge
+            // This ensures descriptions, tags, and all data is up-to-date
+            const freshData = batch.map((item: any) => {
+              const wasNew = newOnes.some((n: any) => n.id === item.id);
+              return { ...item, __new: wasNew };
+            });
+            
             if (newOnes.length > 0) {
-              // Mark as new for highlighting
-              const markedNew = newOnes.map((x: any) => ({ ...x, __new: true }));
-              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS RECEIVED`);
+              setToastMsg(`🔔 ${newOnes.length} NEW TICKETS - Updating metrics...`);
               setTimeout(() => setToastMsg(''), 8000);
               
-              // DON'T auto-scroll - let user stay where they are
-              
-              // Merge new tickets at the top
-              const merged = [...markedNew, ...cur].slice(0, 200);
-              
-              // Save to localStorage
-              if (typeof window !== 'undefined') {
+              // Reload ALL dashboard data to update metrics/aggregates
+              setTimeout(async () => {
                 try {
-                  localStorage.setItem('insightRecs', JSON.stringify(merged));
-            } catch {}
-          }
-              
-              return merged;
-            } else {
-              // No new tickets, just return current with fresh data
-              const updatedItems = batch.map(newItem => {
-                const existing = cur.find(x => x?.id === newItem.id);
-                return existing ? { ...existing, ...newItem } : newItem;
-              });
-              return updatedItems.slice(0, 200);
+                  const res2 = await fetch(`${base}/admin/insights?hours=${selectedTimeRange}&limit=100`);
+                  if (res2.ok) {
+                    const fullData = await res2.json();
+                    // Update all dashboard metrics
+                    if (fullData.insights) setData(fullData.insights);
+                    if (fullData.categories) setInsightsCats(fullData.categories);
+                    if (fullData.words) setInsightsWords(fullData.words);
+                    if (fullData.issue_analysis) setIssueAnalysis(fullData.issue_analysis);
+                    if (fullData.global_summary) setGlobalSummary(fullData.global_summary);
+                    console.log('✅ Dashboard metrics updated with new data');
+                  }
+                } catch (err) {
+                  console.warn('Failed to reload dashboard metrics:', err);
+                }
+              }, 1000);
             }
+            
+            // Save to localStorage
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('insightRecs', JSON.stringify(freshData));
+              } catch {}
+            }
+            
+            return freshData;
           });
           
           // Clear "new" badges after 15 seconds
