@@ -377,26 +377,32 @@ const Dashboard = () => {
             console.log(`🆕 Found ${newOnes.length} new tickets`);
             hasNewTickets = newOnes.length > 0;
             
-            // ONLY ADD new tickets, KEEP existing ones (don't replace)
-            if (newOnes.length > 0) {
+            if (hasNewTickets) {
               const markedNew = newOnes.map((x: any) => ({ ...x, __new: true }));
-              const merged = [...markedNew, ...cur].slice(0, 200);
+              const merged = [...markedNew, ...cur];
               
-              console.log(`✅ Added ${newOnes.length} new tickets to list. Total: ${merged.length}`);
-              
+              // Deduplicate, preferring the newer version of a ticket if IDs overlap
+              const final = Array.from(new Map(merged.map(item => [item.id, item])).values()).slice(0, 200);
+
+              console.log(`✅ Merged ${newOnes.length} new tickets. Total: ${final.length}`);
+
               // Save to localStorage
               if (typeof window !== 'undefined') {
                 try {
-                  localStorage.setItem('insightRecs', JSON.stringify(merged));
+                  localStorage.setItem('insightRecs', JSON.stringify(final));
                 } catch {}
               }
-              
-              return merged;
+              return final;
             }
             
-            // No new tickets - keep existing list unchanged
-            console.log(`✓ No new tickets. Keeping ${cur.length} existing tickets.`);
-            return cur;
+            // If no new tickets, it means the fetch was just a refresh of existing data.
+            // In this case, we can update the existing items with any new data from the batch.
+            const updatedCur = cur.map(existing => {
+              const fromBatch = batch.find(item => item.id === existing.id);
+              return fromBatch ? {...existing, ...fromBatch, __new: false} : existing;
+            });
+
+            return updatedCur;
           });
           
           // Handle new tickets AFTER state update
@@ -442,22 +448,14 @@ const Dashboard = () => {
     pollInterval = setInterval(refreshTickets, 60000);
     console.log('⏱️ Started polling every 1 minute for new tickets');
     
-    // Initial load - don't clear localStorage, just fetch and merge
-    refreshTickets();
-    
-    // Load database stats
-    const loadStats = async () => {
-      try {
-        const res = await fetch(`${base}/admin/db_stats`);
-        if (res.ok) {
-          const stats = await res.json();
-          setDbStats(stats);
-        }
-      } catch (err) {
-        console.warn('Failed to load DB stats:', err);
-      }
+    // On initial load, fetch all data
+    const initialLoad = async () => {
+      console.log('🚀 Initial page load: fetching all dashboard data...');
+      await refreshTickets(); // Fetches tickets
+      await loadStats(); // Fetches DB stats
+      console.log('✅ Initial load complete.');
     };
-    loadStats();
+    initialLoad();
 
     return () => {
       if (pollInterval) {
@@ -650,7 +648,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">🎮 Game Support Dashboard</h1>
-            <p className="text-gray-600">Monitor and analyze user feedback trends from support emails</p>
+        <p className="text-gray-600">Monitor and analyze user feedback trends from support emails</p>
             {dbStats && (
               <div className="mt-2 text-xs text-gray-500">
                 📊 Database: {dbStats.total_tickets} tickets loaded • 
