@@ -368,27 +368,34 @@ const Dashboard = () => {
           
           setInsightRecs((cur) => {
             if (!Array.isArray(cur)) cur = [];
-            const seen = new Set(cur.map((x: any) => x?.id).filter(Boolean));
-            const newOnes = batch.filter((x: any) => x?.id && !seen.has(x.id));
+            const existingIds = new Set(cur.map((x: any) => x?.id).filter(Boolean));
+            
+            // Find truly NEW tickets that we don't have yet
+            const newOnes = batch.filter((x: any) => x?.id && !existingIds.has(x.id));
             
             console.log(`🆕 Found ${newOnes.length} new tickets`);
             hasNewTickets = newOnes.length > 0;
             
-            // ALWAYS use fresh batch from server, don't try to merge
-            // This ensures descriptions, tags, and all data is up-to-date
-            const freshData = batch.map((item: any) => {
-              const wasNew = newOnes.some((n: any) => n.id === item.id);
-              return { ...item, __new: wasNew };
-            });
-            
-            // Save to localStorage
-            if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem('insightRecs', JSON.stringify(freshData));
-              } catch {}
+            // ONLY ADD new tickets, KEEP existing ones (don't replace)
+            if (newOnes.length > 0) {
+              const markedNew = newOnes.map((x: any) => ({ ...x, __new: true }));
+              const merged = [...markedNew, ...cur].slice(0, 200);
+              
+              console.log(`✅ Added ${newOnes.length} new tickets to list. Total: ${merged.length}`);
+              
+              // Save to localStorage
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('insightRecs', JSON.stringify(merged));
+                } catch {}
+              }
+              
+              return merged;
             }
             
-            return freshData;
+            // No new tickets - keep existing list unchanged
+            console.log(`✓ No new tickets. Keeping ${cur.length} existing tickets.`);
+            return cur;
           });
           
           // Handle new tickets AFTER state update
@@ -430,9 +437,9 @@ const Dashboard = () => {
       }
     };
 
-    // Start aggressive polling every 10 seconds for new tickets
-    pollInterval = setInterval(refreshTickets, 10000);
-    console.log('⏱️ Started polling every 10 seconds for new tickets');
+    // Poll every 1 minute for new tickets (not too aggressive)
+    pollInterval = setInterval(refreshTickets, 60000);
+    console.log('⏱️ Started polling every 1 minute for new tickets');
     
     // Initial load
     refreshTickets();
