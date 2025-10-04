@@ -1122,37 +1122,51 @@ def insights(
         # pass intent back into one-liner context (not as a tag to UI)
         intent_injected = suggested_tags + ([f"intent:{intent_val}"] if intent_val else [])
         
-        # ALWAYS extract description from actual message content FIRST
-        one_liner = None
-        message_content = (c.last_text or c.subject or '').strip()
+        # Extract the ACTUAL user message - what they wrote!
+        raw_text = (c.last_text or '').strip()
         
-        if len(message_content) > 20:
-            lines = message_content.split('\n')
-            
-            # Extract first meaningful line that isn't metadata
+        # Clean it up and extract the real content
+        real_content = []
+        if raw_text:
+            lines = raw_text.split('\n')
             for line in lines:
                 line = line.strip()
-                if not line or len(line) < 20:
+                
+                # Skip empty or very short lines
+                if not line or len(line) < 10:
                     continue
+                
+                # Skip metadata lines
+                if any(metadata in line.lower() for metadata in [
+                    'userid =', 'user id =', 'device =', 'os =', 'distinct_id',
+                    '@gmail.com', '@google.com', 'noreply',
+                ]):
+                    continue
+                
+                # Skip salutations/closings
+                if line.lower() in ['hello', 'hi', 'dear', 'sincerely', 'regards', 'thank you', 'thanks']:
+                    continue
+                
+                # Clean HTML
+                clean_line = _re.sub(r'<[^>]+>', '', line)
+                clean_line = _re.sub(r'\s+', ' ', clean_line).strip()
+                
+                # If line has substance, add it
+                if len(clean_line) >= 10:
+                    real_content.append(clean_line)
                     
-                # Skip metadata/boilerplate
-                skip_patterns = ['userid', 'user id', 'device =', 'os =', 'from:', 'to:', 'hello,', 'sincerely', 'thank you', 'regards', '@gmail', '@google', 'font-family', '<div', '<br>']
-                if any(skip in line.lower() for skip in skip_patterns):
-                    continue
-                
-                # Clean and extract
-                clean = _re.sub(r'<[^>]+>', '', line)
-                clean = _re.sub(r'\s+', ' ', clean).strip()
-                
-                if len(clean) > 20 and len(clean) < 200:
-                    one_liner = clean[:150]
-                    print(f"✅ Extracted description from message for #{c.number}: '{one_liner}'")
+                # Stop after we have enough (max 3 sentences)
+                if len(real_content) >= 3:
                     break
         
-        # Only use build_one_liner as fallback if extraction failed
-        if not one_liner:
-            one_liner = build_one_liner(raw, entities, cats, extra, bucket, intent_injected)
-            print(f"⚠️ Using build_one_liner fallback for #{c.number}: '{one_liner}'")
+        # Join the real content into a description
+        if real_content:
+            one_liner = ' '.join(real_content)[:200]  # Take first 200 chars of actual content
+            print(f"✅ REAL USER MESSAGE #{c.number}: '{one_liner}'")
+        else:
+            # If we truly can't extract anything, use subject
+            one_liner = (c.subject or 'Support Request')[:100]
+            print(f"⚠️ No message content, using subject for #{c.number}: '{one_liner}'")
         
         # Description extraction complete - use what we got above
         
