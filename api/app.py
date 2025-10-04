@@ -1327,14 +1327,11 @@ def insights(
             similar = cluster_counts.get(ck, 1)
             # expose similar count to clients
             r["similar_count"] = similar
-            # Escalate to CRITICAL if many users affected by the SAME issue (10+)
-            if similar >= 10:
+            # Escalate to CRITICAL if 3+ users affected by the SAME issue
+            if similar >= 3:
                 r["severity_bucket"] = "critical"
                 r["escalation_reason"] = f"🔥 CRITICAL: {similar} users experiencing same issue - needs immediate attention"
-            # Escalate to HIGH if multiple users affected (5-9)
-            elif similar >= 5 and r["severity_bucket"] not in ("critical", "high"):
-                r["severity_bucket"] = "high"
-                r["escalation_reason"] = f"⚠️ HIGH: {similar} users affected - widespread issue"
+                print(f"🔥 CRITICAL escalation for #{r.get('number')}: {similar} similar reports")
         cats_l = set((r.get("categories") or []))
         tags_l = set((r.get("suggested_tags") or []))
         
@@ -1893,6 +1890,7 @@ def backfill_all(max_pages: int = 999):
     Fetch ALL tickets from Help Scout history for learning and pattern analysis.
     Keeps going until no more pages or max_pages reached.
     """
+    print(f"🧠 Starting historical backfill - loading up to {max_pages} pages...")
     total_saved = 0
     page = 1
     
@@ -1901,7 +1899,9 @@ def backfill_all(max_pages: int = 999):
             print(f"📥 Fetching page {page} from Help Scout...")
             data = helpscout.list_conversations(page=page)
         except Exception as e:
-            return {"ok": False, "saved": total_saved, "page": page, "error": f"Help Scout API error: {e}"}
+            error_msg = f"Help Scout API error on page {page}: {e}"
+            print(f"❌ {error_msg}")
+            return {"ok": False, "saved": total_saved, "page": page, "error": error_msg}
         
         items = data.get("_embedded", {}).get("conversations", [])
         if not items:
@@ -1938,17 +1938,27 @@ def backfill_all(max_pages: int = 999):
                         page_saved += 1
                         total_saved += 1
             
-            print(f"✅ Page {page}: Saved {page_saved} new tickets (Total: {total_saved})")
+            if page_saved > 0:
+                print(f"✅ Page {page}: Saved {page_saved} new tickets (Total so far: {total_saved})")
+            else:
+                print(f"⏭️  Page {page}: 0 new tickets (all already in database)")
         
         # Check if there are more pages
         next_link = data.get("_links", {}).get("next")
         if not next_link:
-            print(f"✅ Reached end of Help Scout history at page {page}")
+            print(f"✅ Reached end of Help Scout history at page {page}. Total saved: {total_saved}")
+            break
+        
+        # Stop early if we've fetched 3 pages with no new tickets (all caught up)
+        if total_saved == 0 and page >= 3:
+            print(f"⏹️  Stopping - no new tickets in last 3 pages. Database is up to date.")
             break
             
         page += 1
     
-    return {"ok": True, "saved": total_saved, "pages_fetched": page, "message": f"Fetched {total_saved} historical tickets from Help Scout for learning"}
+    final_message = f"Successfully loaded {total_saved} historical tickets from {page} pages"
+    print(f"🎉 {final_message}")
+    return {"ok": True, "saved": total_saved, "pages_fetched": page, "message": final_message}
 
 
 # Vector indexing
