@@ -120,7 +120,6 @@ const Dashboard = () => {
       ],
       platformData: [],
       severityData: [
-        { severity: 'Critical', count: 0, resolved: 0 },
         { severity: 'High', count: 0, resolved: 0 },
         { severity: 'Medium', count: 0, resolved: 0 },
         { severity: 'Low', count: 0, resolved: 0 },
@@ -748,9 +747,12 @@ const Dashboard = () => {
                             </span>
                           )}
                         </div>
-                        <div className="text-sm font-semibold text-gray-900 mb-1">{r.subject || 'No subject'}</div>
-                        {r.one_liner && (
-                          <div className="text-xs text-gray-700 mb-1">{r.one_liner}</div>
+                        {/* Show one_liner as main title (actual user message) */}
+                        <div className="text-sm font-semibold text-gray-900 mb-1">
+                          {r.one_liner || r.subject || 'No description'}
+                        </div>
+                        {r.subject && r.one_liner && r.subject !== r.one_liner && !r.one_liner.includes(r.subject) && (
+                          <div className="text-xs text-gray-500 mb-1">Subject: {r.subject}</div>
                         )}
                         {r.escalation_reason && (
                           <div className="text-xs font-semibold text-red-700 mb-2 px-2 py-1 bg-red-50 rounded border border-red-200 inline-block">
@@ -1221,9 +1223,12 @@ const Dashboard = () => {
                         );
                       })}
                       </div>
-                      <div className="text-sm font-semibold text-gray-900 mb-1">{r.subject || 'No subject'}</div>
-                      {r.one_liner && (
-                        <div className="text-xs text-gray-700 mb-1">{r.one_liner}</div>
+                      {/* Show one_liner as main title (actual user message), subject as subtitle if different */}
+                      <div className="text-sm font-semibold text-gray-900 mb-1">
+                        {r.one_liner || r.subject || 'No description'}
+                      </div>
+                      {r.subject && r.one_liner && r.subject !== r.one_liner && !r.one_liner.includes(r.subject) && (
+                        <div className="text-xs text-gray-500 mb-1">Subject: {r.subject}</div>
                       )}
                       <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
                         {r.customer_name && <span>👤 {r.customer_name}</span>}

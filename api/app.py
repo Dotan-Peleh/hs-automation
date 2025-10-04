@@ -1327,12 +1327,12 @@ def insights(
             similar = cluster_counts.get(ck, 1)
             # expose similar count to clients
             r["similar_count"] = similar
-            # Escalate to CRITICAL if many users affected (10+)
-            if similar >= 10:
-                r["severity_bucket"] = "critical"
+            # Escalate to HIGH if many users affected (10+)
+            if similar >= 10 and r["severity_bucket"] != "high":
+                r["severity_bucket"] = "high"
                 r["escalation_reason"] = f"🔥 CRITICAL: {similar} users affected by same issue"
             # Escalate to HIGH if multiple users affected (5+)
-            elif similar >= 5 and r["severity_bucket"] not in ("critical", "high"):
+            elif similar >= 5 and r["severity_bucket"] != "high":
                 r["severity_bucket"] = "high"
                 r["escalation_reason"] = f"⚠️ Escalated to HIGH: {similar} similar reports"
         cats_l = set((r.get("categories") or []))
