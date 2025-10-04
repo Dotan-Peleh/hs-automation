@@ -132,6 +132,7 @@ const Dashboard = () => {
       radarData: [],
     } as any;
   };
+  // State for dashboard data
   const [data, setData] = useState(getEmptyData());
   // Insights state
   const [insightsCats, setInsightsCats] = useState<any[]>([]);
@@ -162,8 +163,135 @@ const Dashboard = () => {
       }
     }
   }, []);
+  
+  // New, correct useEffect for data fetching
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+    let pollInterval: NodeJS.Timeout | null = null;
+    
+    const loadStats = async () => {
+      try {
+        const res = await fetch(`${base}/admin/db_stats`);
+        if (res.ok) {
+          const stats = await res.json();
+          setDbStats(stats);
+        }
+      } catch (err) {
+        console.warn('Failed to load DB stats:', err);
+      }
+    };
+    
+    const refreshTickets = async (hours: number) => {
+      try {
+        console.log('🔄 Polling for new tickets...');
+        const res = await fetch(`${base}/admin/insights?hours=${hours}&limit=50&page=1`);
+              if (res.ok) {
+                const j = await res.json();
+                const batch: any[] = j.recommendations || [];
+          console.log(`📥 Received ${batch.length} tickets from API`);
+          
+          let hasNewTickets = false;
+          
+                setInsightRecs((cur) => {
+            if (!Array.isArray(cur)) cur = [];
+            const existingIds = new Set(cur.map((x: any) => x?.id).filter(Boolean));
+            
+            // Find truly NEW tickets that we don't have yet
+            const newOnes = batch.filter((x: any) => x?.id && !existingIds.has(x.id));
+            
+            console.log(`🆕 Found ${newOnes.length} new tickets`);
+            hasNewTickets = newOnes.length > 0;
+            
+            if (hasNewTickets) {
+              const markedNew = newOnes.map((x: any) => ({ ...x, __new: true }));
+              const merged = [...markedNew, ...cur];
+              
+              // Deduplicate, preferring the newer version of a ticket if IDs overlap
+              const final = Array.from(new Map(merged.map(item => [item.id, item])).values()).slice(0, 200);
 
-  // Remove mock injection; rely on live data only
+              console.log(`✅ Merged ${newOnes.length} new tickets. Total: ${final.length}`);
+
+              // Save to localStorage
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('insightRecs', JSON.stringify(final));
+                } catch {}
+              }
+              return final;
+            }
+            
+            // If no new tickets, it means the fetch was just a refresh of existing data.
+            // In this case, we can update the existing items with any new data from the batch.
+            const updatedCur = cur.map(existing => {
+              const fromBatch = batch.find(item => item.id === existing.id);
+              return fromBatch ? {...existing, ...fromBatch, __new: false} : existing;
+            });
+
+            return updatedCur;
+          });
+          
+          // Handle new tickets AFTER state update
+          if (hasNewTickets) {
+            setToastMsg(`🔔 New tickets received - Updating metrics...`);
+            setTimeout(() => setToastMsg(''), 8000);
+            
+            // Reload ALL dashboard data
+            setTimeout(async () => {
+              try {
+                const res2 = await fetch(`${base}/admin/insights?hours=${hours}&limit=100`);
+                if (res2.ok) {
+                  const fullData = await res2.json();
+                  if (fullData.insights) setData(fullData.insights);
+                  if (fullData.categories) setInsightsCats(fullData.categories);
+                  if (fullData.words) setInsightsWords(fullData.words);
+                  if (fullData.issue_analysis) setIssueAnalysis(fullData.issue_analysis);
+                  if (fullData.global_summary) setGlobalSummary(fullData.global_summary);
+                  console.log('✅ Dashboard metrics updated');
+                }
+              } catch (err) {
+                console.warn('Failed to reload metrics:', err);
+              }
+            }, 1000);
+            
+            // Clear "new" badges after 15 seconds
+                setTimeout(() => {
+              setInsightRecs((cur) => {
+                if (!Array.isArray(cur)) return cur;
+                return cur.map((x: any) => ({ ...x, __new: false }));
+              });
+            }, 15000);
+          }
+        } else {
+          console.warn('Failed to fetch tickets:', res.status, res.statusText);
+        }
+      } catch (err) {
+        console.error('❌ Failed to refresh tickets:', err);
+      }
+    };
+
+    // Every 1 minute, fetch the latest tickets and ADD them to the list
+    pollInterval = setInterval(async () => {
+      const hours = parseHours(selectedTimeRange);
+      await refreshTickets(hours);
+    }, 60000);
+    console.log('⏱️ Started polling every 1 minute for new tickets');
+    
+    // On initial load, fetch all data
+    const initialLoad = async () => {
+      console.log('🚀 Initial page load: fetching all dashboard data...');
+      const hours = parseHours(selectedTimeRange);
+      await refreshTickets(hours);
+      await loadStats();
+      console.log('✅ Initial load complete.');
+    };
+    initialLoad();
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [selectedTimeRange]); // Re-run when time range changes
 
   // Fetch dismissed tickets
   useEffect(() => {
@@ -351,15 +479,27 @@ const Dashboard = () => {
     return () => { cancelled = true; };
   }, []);
   
+    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+
+  const loadStats = async () => {
+    try {
+      const res = await fetch(`${base}/admin/db_stats`);
+      if (res.ok) {
+        setDbStats(await res.json());
+      }
+    } catch (err) {
+      console.warn('Failed to load DB stats:', err);
+    }
+  };
+  
   // Simple polling for real-time updates (avoiding SSE complexity)
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     let pollInterval: NodeJS.Timeout | null = null;
 
-    const refreshTickets = async () => {
+    const refreshTickets = async (hours: number) => {
       try {
         console.log('🔄 Polling for new tickets...');
-        const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1`);
+        const res = await fetch(`${base}/admin/insights?hours=${hours}&limit=50&page=1`);
               if (res.ok) {
                 const j = await res.json();
                 const batch: any[] = j.recommendations || [];
@@ -413,7 +553,7 @@ const Dashboard = () => {
             // Reload ALL dashboard data
             setTimeout(async () => {
               try {
-                const res2 = await fetch(`${base}/admin/insights?hours=${selectedTimeRange}&limit=100`);
+                const res2 = await fetch(`${base}/admin/insights?hours=${hours}&limit=100`);
                 if (res2.ok) {
                   const fullData = await res2.json();
                   if (fullData.insights) setData(fullData.insights);
@@ -445,14 +585,18 @@ const Dashboard = () => {
     };
 
     // Every 1 minute, fetch the latest tickets and ADD them to the list
-    pollInterval = setInterval(refreshTickets, 60000);
+    pollInterval = setInterval(async () => {
+      const hours = parseHours(selectedTimeRange);
+      await refreshTickets(hours);
+    }, 60000);
     console.log('⏱️ Started polling every 1 minute for new tickets');
     
-    // On initial load, fetch all data
+    // Initial load
     const initialLoad = async () => {
       console.log('🚀 Initial page load: fetching all dashboard data...');
-      await refreshTickets(); // Fetches tickets
-      await loadStats(); // Fetches DB stats
+      const hours = parseHours(selectedTimeRange);
+      await refreshTickets(hours);
+      await loadStats();
       console.log('✅ Initial load complete.');
     };
     initialLoad();
@@ -464,12 +608,20 @@ const Dashboard = () => {
     };
   }, []);
 
-  // Manual refresh function for immediate updates
+  const parseHours = (range: string) => {
+    if (range.endsWith('d')) {
+      return parseInt(range.replace('d', '')) * 24;
+    }
+    return parseInt(range);
+  };
+
+  // Manual refresh function
   const manualRefresh = async () => {
     setToastMsg('🔄 Checking for new tickets...');
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     try {
-      const res = await fetch(`${base}/admin/insights?hours=24&limit=50&page=1&_t=${Date.now()}`);
+      const hours = parseHours(selectedTimeRange);
+      const res = await fetch(`${base}/admin/insights?hours=${hours}&limit=50&page=1&_t=${Date.now()}`);
       if (res.ok) {
         const j = await res.json();
         const batch: any[] = j.recommendations || [];
@@ -482,6 +634,11 @@ const Dashboard = () => {
           try {
             localStorage.setItem('insightRecs', JSON.stringify(batch));
           } catch {}
+        }
+        // Also refresh stats
+        const statsRes = await fetch(`${base}/admin/db_stats`);
+        if (statsRes.ok) {
+          setDbStats(await statsRes.json());
         }
       }
     } catch (err) {
