@@ -1089,10 +1089,54 @@ def insights(
             llm_tags.append(f"cause:{extra['root_cause']}")
             
         final_tags = list(set(llm_tags)) # Simplified, as other sources were removed
+        
+        # Compute severity
+        sev_score = severity.compute(raw, entities, rule_score)
+        bucket = severity.bucketize(sev_score, 0, 0)
+        if not bucket:
+            if sev_score >= 50:
+                bucket = "high"
+            elif sev_score >= 30:
+                bucket = "medium"
+            else:
+                bucket = "low"
+        
         suggested_tags = [f"sev:{bucket}"] + final_tags
         
-        # best-effort: fetch customer name for display
-        customer_name = None
+        # Get Help Scout tags
+        existing_tags = []
+        if c.tags:
+            existing_tags = [t.strip() for t in c.tags.split(',') if t.strip()]
+        
+        # Compute cluster key
+        cluster_key = fingerprint.cluster_key(raw, entities)
+        
+        # Check if dismissed
+        is_dismissed = c.id in dismissed_ids
+        
+        # Build recommendation object
+        rec = {
+            "conv_id": c.id,
+            "number": c.number,
+            "subject": c.subject,
+            "one_liner": one_liner,
+            "text": c.last_text or "",
+            "categories": cats or [],
+            "entities": entities,
+            "severity_score": sev_score,
+            "severity_bucket": bucket,
+            "cluster_key": cluster_key,
+            "suggested_tags": suggested_tags,
+            "existing_tags": existing_tags,
+            "intent": extra.get("intent"),
+            "root_cause": extra.get("root_cause"),
+            "customer_name": c.customer_name,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            "hs_link": f"https://secure.helpscout.net/conversation/{c.id}",
+            "is_dismissed": is_dismissed,
+            "agent_replied_status": getattr(c, 'agent_replied_status', False),
+        }
+        recs.append(rec)
 
     # Post-process: adjust severity by repetition and categories
     for r in recs:
