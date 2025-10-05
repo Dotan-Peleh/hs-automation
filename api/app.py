@@ -1159,15 +1159,24 @@ def insights(
             r["severity_bucket"] = "high"
         elif "crash" in cats_l:
             r["severity_bucket"] = "high"
+        # Check for crash/freeze/stuck in LLM tags (simple keywords)
+        crash_keywords = {"crash", "crashing", "freeze", "freezing", "stuck", "frozen", "force-close", "not-responding"}
+        if any(keyword in tags_l for keyword in crash_keywords):
+            r["severity_bucket"] = "high"
+            r["escalation_reason"] = "⚠️ Escalated to HIGH: App crash/freeze detected"
         # Item disappeared/missing items (affects user purchases/progress)
         if "tag:item_disappeared" in tags_l and r["severity_bucket"] in ("low", "medium"):
             r["severity_bucket"] = "high"
         # Payment issues are important (revenue)
-        if "payment" in cats_l and r["severity_bucket"] == "low":
-            r["severity_bucket"] = "medium"
+        payment_keywords = {"payment", "purchase", "charged", "refund", "billing", "subscription", "iap", "in-app-purchase"}
+        if "payment" in cats_l or any(keyword in tags_l for keyword in payment_keywords):
+            if r["severity_bucket"] == "low":
+                r["severity_bucket"] = "medium"
         # Progress lost is at least medium
-        if "progress_lost" in cats_l and r["severity_bucket"] == "low":
-            r["severity_bucket"] = "medium"
+        progress_keywords = {"progress", "save", "lost", "reset", "rollback", "disappeared", "missing"}
+        if "progress_lost" in cats_l or any(keyword in tags_l for keyword in progress_keywords):
+            if r["severity_bucket"] == "low":
+                r["severity_bucket"] = "medium"
         # Store issues should be at least medium (affects revenue)
         if "tag:store_issue" in tags_l and r["severity_bucket"] == "low":
             r["severity_bucket"] = "medium"
