@@ -154,16 +154,8 @@ def healthz():
 
 # Mark ticket as seen/dismissed
 @app.post("/admin/ticket/mark_seen")
-async def mark_ticket_seen(req: Request):
+def mark_ticket_seen(conv_id: int, action: str = 'dismissed'):
     """Mark a ticket as seen or dismissed by the user."""
-    import json
-    try:
-        data = await req.json()
-        conv_id = data.get('conv_id')
-        action = data.get('action', 'dismissed')
-    except:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
-    
     if not conv_id:
         raise HTTPException(status_code=400, detail="conv_id required")
         
