@@ -62,8 +62,8 @@ def _publish_event(ev: dict):
                 # Remove dead subscribers
                 try:
                     _subscribers.remove(q)
-                except:
-                pass
+                except Exception:
+                    pass
     except Exception as e:
         print(f"ERROR: Failed to publish event: {e}")
 
