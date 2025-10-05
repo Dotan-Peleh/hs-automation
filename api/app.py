@@ -1030,7 +1030,8 @@ def insights(
             except Exception:
                 cached = None
         
-        if cached:
+        # Check if cached data is complete (has all required fields)
+        if cached and getattr(cached, 'intent', None) and getattr(cached, 'root_cause', None):
             # Hydrate from cache without calling LLM
             print(f"✅ Using cached enrichment for #{c.number}")
             extra = {
@@ -1040,6 +1041,9 @@ def insights(
                 "tags": (getattr(cached, 'tags', '') or '').split(',') if getattr(cached, 'tags', '') else [],
             }
         else:
+            # Cache is incomplete or missing, need to re-enrich
+            if cached:
+                print(f"⚠️ Cached data incomplete for #{c.number}, re-enriching...")
             # No cache or content has changed, call the LLM
             extra = llm.enrich(raw)
             if extra.get("summary"):
