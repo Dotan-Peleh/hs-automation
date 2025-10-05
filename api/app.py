@@ -660,18 +660,8 @@ def insights(
             word_counts[w] = word_counts.get(w, 0) + 1
 
     def add_keywords_smart(text: str):
-        try:
-            if gensim_keywords is None:
-                return
-            # gensim returns comma-separated keywords; limit to top 10
-            ks = gensim_keywords(text or '', split=True, words=10)
-            for k in (ks or []):
-                k2 = str(k or '').strip().lower()
-                if not k2 or k2 in stop or k2 in BAN_TOKENS:
-                    continue
-                word_counts[k2] = word_counts.get(k2, 0) + 2  # boost gensim terms
-        except Exception:
-            pass
+        # gensim_keywords is not available, skip this feature
+        return
 
     import re
 
