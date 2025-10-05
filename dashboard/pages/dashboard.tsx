@@ -301,7 +301,7 @@ const Dashboard = () => {
                     const intent = (document.getElementById('intent-select') as HTMLSelectElement).value;
                     const severity = (document.getElementById('severity-select') as HTMLSelectElement).value;
                     const notes = (document.getElementById('notes-input') as HTMLTextAreaElement).value;
-                    submitFeedback(feedbackTicket.id, intent, severity, notes);
+                    submitFeedback(feedbackTicket.conv_id, intent, severity, notes);
                   }}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
                 >

@@ -1067,12 +1067,28 @@ def insights(
         if not one_liner:
             one_liner = c.subject or "No description available"
         
+        # Check if agent has replied
+        agent_replied = False
+        try:
+            # Check Help Scout tags for agent:replied indicator
+            if c.tags and 'agent:replied' in c.tags.lower():
+                agent_replied = True
+            # Also check if there are multiple threads (fallback)
+            elif c.threads and len(c.threads) > 1:
+                agent_replied = True
+        except:
+            pass
+        
         # Combine tags from various sources
         llm_tags = extra.get("tags", [])
         if extra.get("intent"):
             llm_tags.append(f"intent:{extra['intent']}")
         if extra.get("root_cause"):
             llm_tags.append(f"cause:{extra['root_cause']}")
+        
+        # Add agent:replied tag if agent has responded
+        if agent_replied:
+            llm_tags.append("agent:replied")
             
         final_tags = list(set(llm_tags)) # Simplified, as other sources were removed
         
@@ -1120,7 +1136,7 @@ def insights(
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             "hs_link": f"https://secure.helpscout.net/conversation/{c.id}",
             "is_dismissed": is_dismissed,
-            "agent_replied_status": getattr(c, 'agent_replied_status', False),
+            "agent_replied_status": agent_replied,
         }
         recs.append(rec)
 
@@ -1152,10 +1168,21 @@ def insights(
         elif "crash" in cats_l:
             r["severity_bucket"] = "high"
         # Check for crash/freeze/stuck in LLM tags (simple keywords)
-        crash_keywords = {"crash", "crashing", "freeze", "freezing", "stuck", "frozen", "force-close", "not-responding"}
+        # Be specific - only escalate TRUE crashes/freezes, not gameplay issues
+        crash_keywords = {"crash", "crashing", "freeze", "freezing", "frozen", "force-close", "not-responding"}
+        stuck_keywords = {"stuck", "loading", "infinite-loop"}
+        
+        # Check for critical crash indicators
         if any(keyword in tags_l for keyword in crash_keywords):
             r["severity_bucket"] = "high"
             r["escalation_reason"] = "⚠️ Escalated to HIGH: App crash/freeze detected"
+        # "stuck" only escalates if combined with UI/loading context (not gameplay)
+        elif any(keyword in tags_l for keyword in stuck_keywords):
+            # Only escalate if it's a UI/loading issue, not a gameplay mechanic issue
+            root_cause = r.get("root_cause", "").lower()
+            if any(term in root_cause for term in ["app", "game", "loading", "screen", "launch"]):
+                r["severity_bucket"] = "high"
+                r["escalation_reason"] = "⚠️ Escalated to HIGH: App stuck/loading issue"
         # Item disappeared/missing items (affects user purchases/progress)
         if "tag:item_disappeared" in tags_l and r["severity_bucket"] in ("low", "medium"):
             r["severity_bucket"] = "high"
@@ -1333,10 +1360,41 @@ def dashboard(hours: int = 24):
         if not raw:
             continue
         entities = classify.extract_entities(raw)
-        cats, rule_score = classify.categorize(raw.lower())
-        extra = llm.enrich(raw) if llm.is_enabled() else {}
-        if extra.get("categories"):
-            cats = sorted(set((cats or []) + (extra.get("categories") or [])))
+        
+        # Use cached LLM enrichment instead of calling LLM again
+        extra = {}
+        try:
+            cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id).first()
+            if cached and getattr(cached, 'intent', None):
+                extra = {
+                    "intent": getattr(cached, 'intent', None),
+                    "root_cause": getattr(cached, 'root_cause', None),
+                }
+        except:
+            pass
+        
+        # Map LLM intent to chart categories
+        cats = []
+        intent = extra.get("intent", "")
+        if intent:
+            if "bug" in intent or "crash" in intent:
+                cats.append("bug")
+            if "crash" in intent or "freeze" in intent:
+                cats.append("crash")
+            if "performance" in intent:
+                cats.append("performance")
+            if "billing" in intent or "payment" in intent or "refund" in intent:
+                cats.append("payment")
+            if "question" in intent or "how_to" in intent:
+                cats.append("question")
+            if "feature" in intent:
+                cats.append("feature_request")
+        
+        # Fallback to basic categorization if no intent
+        if not cats:
+            cats, rule_score = classify.categorize(raw.lower())
+        else:
+            rule_score = 0
         sev_score = severity.compute(raw, entities, rule_score)
         bucket = severity.bucketize(sev_score, 0, 0)
         if not bucket:
