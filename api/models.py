@@ -22,6 +22,10 @@ if not DB_URL:
 engine = create_engine(
     DB_URL,
     pool_pre_ping=True,
+    pool_size=20,  # Increase from default 5 to handle concurrent load
+    max_overflow=30,  # Increase from default 10 (total 50 connections)
+    pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_timeout=60,  # Wait up to 60 seconds for a connection (increased from 30)
     connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {}
 )
 SessionLocal = sessionmaker(bind=engine)
