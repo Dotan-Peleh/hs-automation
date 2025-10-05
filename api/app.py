@@ -314,7 +314,23 @@ async def process_webhook_event(conv_id: int):
             last_text = helpscout.extract_text(conv)
             raw_tags = conv.get('tags') or []
             tag_names = [t.get('tag') if isinstance(t, dict) else str(t) for t in raw_tags]
+            
+            # Check if agent has replied (look at threads)
+            threads = conv.get('_embedded', {}).get('threads', []) if '_embedded' in conv else []
+            agent_replied = False
+            for thread in threads:
+                created_by = thread.get('createdBy', {})
+                if created_by.get('type') == 'user' and created_by.get('email'):
+                    # This is a staff reply (not customer)
+                    agent_replied = True
+                    break
+            
+            # Add agent:replied tag if agent responded
+            if agent_replied and 'agent:replied' not in tag_names:
+                tag_names.append('agent:replied')
+            
             tags_str = ','.join([t for t in tag_names if t])
+            print(f"📋 Ticket #{number}: Tags = {tags_str}, Agent replied = {agent_replied}")
             
             # Parse timestamp
             updated_at_dt = None
@@ -1018,25 +1034,26 @@ def insights(
         cached = None
         if content_hash:
             try:
-                cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id, HsEnrichment.content_hash == content_hash).first()
+                cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id).first()
             except Exception:
                 cached = None
         
-        # Check if cached data is complete (has all required fields)
-        if cached and getattr(cached, 'intent', None) and getattr(cached, 'root_cause', None):
-            # Hydrate from cache without calling LLM
-            print(f"✅ Using cached enrichment for #{c.number}")
+        # Use cache if available AND content hasn't changed
+        if cached and getattr(cached, 'content_hash', None) == content_hash:
+            # Content unchanged, use cached data (even if incomplete - saves tokens)
+            print(f"✅ Using cached enrichment for #{c.number} (content_hash match)")
             extra = {
-                "summary": cached.summary,
+                "summary": getattr(cached, 'summary', None),
                 "intent": getattr(cached, 'intent', None),
                 "root_cause": getattr(cached, 'root_cause', None),
                 "tags": (getattr(cached, 'tags', '') or '').split(',') if getattr(cached, 'tags', '') else [],
             }
         else:
-            # Cache is incomplete or missing, need to re-enrich
+            # Content changed or no cache - call LLM
             if cached:
-                print(f"⚠️ Cached data incomplete for #{c.number}, re-enriching...")
-            # No cache or content has changed, call the LLM
+                print(f"🔄 Content changed for #{c.number}, re-enriching...")
+            else:
+                print(f"🆕 New ticket #{c.number}, enriching...")
             extra = llm.enrich(raw)
             if extra.get("summary"):
                 print(f"✅ LLM enriched #{c.number}: '{extra.get('summary')}'")

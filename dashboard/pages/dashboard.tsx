@@ -48,9 +48,9 @@ const Dashboard = () => {
         
         // On first load or when prevRecs is empty, just set all recommendations
         setInsightRecs(prevRecs => {
-          // If this is the first load (no previous tickets), just use the API data
+          // If this is the first load (no previous tickets), just use the API data WITHOUT __new flag
           if (prevRecs.length === 0) {
-            const tickets = recsData.recommendations || [];
+            const tickets = (recsData.recommendations || []).map((t:any) => ({...t, __new: false}));
             localStorage.setItem('insightRecs', JSON.stringify(tickets));
             return tickets;
           }
