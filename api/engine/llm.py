@@ -62,22 +62,25 @@ def enrich(text: str) -> dict:
             # remove possible leading json identifier
             if raw.lower().startswith("json\n"):
                 raw = raw[5:]
-        parsed = json.loads(raw)
+        
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(f"❌ LLM returned invalid JSON: {e}. Raw response: {raw[:200]}")
+            return {}
+        
         # minimal sanitation
         if not isinstance(parsed, dict):
             return {}
         
         print(f"✅ LLM enrichment successful. Summary: {parsed.get('summary')}")
         
-        # Ensure all expected keys are present
+        # Return fields that match the SYSTEM prompt
         return {
             "summary": parsed.get("summary"),
-            "categories": parsed.get("categories") or [],
+            "root_cause": parsed.get("root_cause"),
+            "intent": parsed.get("intent"),
             "tags": parsed.get("tags") or [],
-            "platform": parsed.get("platform"),
-            "app_version": parsed.get("app_version"),
-            "level": parsed.get("level"),
-            "distinct_id": (parsed.get("distinct_id") or _extract_id_like(parsed.get("summary") or "") ),
         }
     except Exception as e:
         print(f"❌ LLM enrichment FAILED. Error: {e}")

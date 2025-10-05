@@ -1048,23 +1048,23 @@ def insights(
             extra = llm.enrich(raw)
             if extra.get("summary"):
                 print(f"✅ LLM enriched #{c.number}: '{extra.get('summary')}'")
-                # Persist enrichment for future runs
+                # Persist enrichment for future runs (reuse existing session to avoid pool exhaustion)
                 try:
-                    with get_session() as s_upsert:
-                        row = s_upsert.query(HsEnrichment).get(c.id)
-                        if not row:
-                            row = HsEnrichment(conv_id=c.id)
-                            s_upsert.add(row)
-                        row.content_hash = content_hash
-                        row.summary = extra.get('summary')
-                        row.tags = ','.join(extra.get('tags', []))
-                        row.intent = extra.get('intent')
-                        row.root_cause = extra.get('root_cause')
-                        row.last_enriched_at = datetime.utcnow()
-                        s_upsert.commit()
-                        print(f"💾 Cached enrichment for #{c.number}")
+                    row = s.query(HsEnrichment).get(c.id)
+                    if not row:
+                        row = HsEnrichment(conv_id=c.id)
+                        s.add(row)
+                    row.content_hash = content_hash
+                    row.summary = extra.get('summary')
+                    row.tags = ','.join(extra.get('tags', []))
+                    row.intent = extra.get('intent')
+                    row.root_cause = extra.get('root_cause')
+                    row.last_enriched_at = datetime.utcnow()
+                    s.commit()
+                    print(f"💾 Cached enrichment for #{c.number}")
                 except Exception as e:
                     print(f"❌ DB Error: Failed to cache enrichment for #{c.number}. Error: {e}")
+                    s.rollback()  # Rollback on error to keep session healthy
             else:
                 print(f"⚠️ LLM enrichment failed for #{c.number}. Will use basic extraction.")
         
