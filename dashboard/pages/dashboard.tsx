@@ -139,6 +139,7 @@ const Dashboard = () => {
 
   // Submit tag correction feedback
   const submitFeedback = async (convId: number, correctIntent: string, correctSeverity: string, notes: string) => {
+    const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
     try {
       const params = new URLSearchParams({
         conv_id: convId.toString(),
@@ -175,16 +176,24 @@ const Dashboard = () => {
     setDismissedIds(newSet);
     setTimeout(() => setToastMsg(''), 2000);
     
-    // Sync with server
+    // THEN sync with server in background
     try {
       if (isDismissed) {
-        await fetch(`${base}/admin/ticket/unmark?conv_id=${convId}`, { method: 'POST' });
+        await fetch(`${base}/admin/ticket/unmark?conv_id=${convId}`, {
+          method: 'POST',
+        });
       } else {
-        await fetch(`${base}/admin/ticket/mark_seen?conv_id=${convId}&action=dismissed`, { method: 'POST' });
+        const params = new URLSearchParams({
+          conv_id: convId.toString(),
+          action: 'dismissed',
+        });
+        await fetch(`${base}/admin/ticket/mark_seen?${params.toString()}`, {
+          method: 'POST',
+        });
       }
     } catch (e) {
-      console.error('Failed to sync "Mark as Done" with server:', e);
-      // Revert UI on failure
+      console.error('Failed to sync with server:', e);
+      // Revert UI change if server call failed
       const revertedSet = new Set(dismissedIds);
       if (isDismissed) {
         revertedSet.add(convId);

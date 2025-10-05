@@ -31,7 +31,8 @@ def enrich(text: str) -> dict:
     if not is_enabled() or not text:
         return {}
     
-    print(f"🧠 Calling LLM to enrich ticket content (first 150 chars): '{text[:150].replace('\n', ' ')}...'")
+    clean_text_for_log = text[:150].replace('\n', ' ')
+    print(f"🧠 Calling LLM to enrich ticket content (first 150 chars): '{clean_text_for_log}...'")
     
     try:
         payload = {

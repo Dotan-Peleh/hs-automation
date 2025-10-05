@@ -596,7 +596,20 @@ def insights(
                         cluster_meta[ck]["last_seen"] = cur
                 except Exception:
                     pass
-
+            
+            # This is where we determine if an agent has replied
+            agent_replied = False
+            try:
+                # A simple check for now: if there's more than one thread, assume an agent replied.
+                # This is a proxy and can be improved with more detailed thread analysis.
+                if c.threads and len(c.threads) > 1:
+                    agent_replied = True
+            except:
+                pass
+            
+            # Store this status to be used in the final recs object
+            c.agent_replied_status = agent_replied
+            
     # Remove markup/boilerplate tokens from keyword list
     BAN_TOKENS = set([
         'div','span','table','tbody','thead','tr','td','th','style','class','width','height','align','center',
@@ -1106,9 +1119,8 @@ def insights(
     replied_count = 0
     unreplied_count = 0
     for r in recs:
-        # Check if agent:replied tag is present
-        tags = r.get("suggested_tags", [])
-        if "agent:replied" in tags:
+        # Check the status we determined earlier
+        if r.get("agent_replied_status"):
             replied_count += 1
         else:
             unreplied_count += 1
