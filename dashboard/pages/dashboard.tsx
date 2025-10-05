@@ -33,7 +33,7 @@ const Dashboard = () => {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
 
   const loadDashboardData = async () => {
-    console.log('🚀 Fetching all dashboard data...');
+    console.log('🚀 Fetching all dashboard data... (v2.1)');
     try {
       const hours = parseHours(selectedTimeRange);
       const [recsRes, statsRes, dashboardRes, dismissedRes] = await Promise.all([
