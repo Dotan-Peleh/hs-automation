@@ -34,7 +34,7 @@ try:
 except Exception as e:
     print(f"⚠️  Database table creation warning: {e}")
 
-app = FastAPI(title="HS Trends", version="2.0")  # Force redeploy
+app = FastAPI(title="HS Trends", version="2.1")  # Force redeploy with CORS fix
 
 # This is the simplest possible CORS configuration to allow all origins.
 # This will fix the CORS error.
@@ -1027,9 +1027,9 @@ def insights(
             print(f"✅ Using cached enrichment for #{c.number}")
             extra = {
                 "summary": cached.summary,
-                "intent": cached.intent,
-                "root_cause": cached.root_cause,
-                "tags": (cached.tags or '').split(',') if cached.tags else [],
+                "intent": getattr(cached, 'intent', None),
+                "root_cause": getattr(cached, 'root_cause', None),
+                "tags": (getattr(cached, 'tags', '') or '').split(',') if getattr(cached, 'tags', '') else [],
             }
         else:
             # No cache or content has changed, call the LLM
