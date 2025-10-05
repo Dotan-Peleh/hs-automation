@@ -35,7 +35,15 @@ except Exception as e:
     print(f"⚠️  Database table creation warning: {e}")
 
 app = FastAPI(title="HS Trends", version="2.0")  # Force redeploy
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_headers=["*"], allow_methods=["*"])
+
+# Configure CORS to allow requests from the Vercel dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://hs-automation.vercel.app", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Very lightweight in‑process pubsub for real‑time notifications (dev only) ---
 import asyncio
@@ -1821,3 +1829,23 @@ def _maybe_start_reindexer():
     if os.getenv("VECTOR_BG_REINDEX", "1") == "1" and _bg_thread is None and _vector_auto_enabled():
         _bg_thread = threading.Thread(target=_bg_reindex_loop, name="vector-reindex", daemon=True)
         _bg_thread.start()
+
+@app.get("/admin/db_stats")
+def db_stats():
+    """Get database statistics"""
+    with get_session() as s:
+        total_tickets = s.query(HsConversation).count()
+        total_feedback = s.query(TicketFeedback).filter_by(action_type='tag_correction').count()
+        
+        # Get date range
+        oldest = s.query(HsConversation).order_by(HsConversation.updated_at.asc()).first()
+        newest = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).first()
+        
+        return {
+            "total_tickets": total_tickets,
+            "total_corrections": total_feedback,
+            "oldest_ticket": oldest.updated_at.isoformat() if oldest and oldest.updated_at else None,
+            "newest_ticket": newest.updated_at.isoformat() if newest and newest.updated_at else None,
+            "oldest_number": oldest.number if oldest else None,
+            "newest_number": newest.number if newest else None,
+        }
