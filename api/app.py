@@ -316,16 +316,34 @@ async def process_webhook_event(conv_id: int):
             conv = helpscout.fetch_conversation(conv_id)
             if not conv: return
             
-            # This will upsert conversation and all enrichments (including agent_replied status)
-            upsert_hs_conversation(s, conv)
+            # Extract fields from conversation object
+            number = conv.get('number')
+            subject = conv.get('subject')
+            last_text = helpscout.extract_text(conv)
+            raw_tags = conv.get('tags') or []
+            tag_names = [t.get('tag') if isinstance(t, dict) else str(t) for t in raw_tags]
+            tags_str = ','.join([t for t in tag_names if t])
+            
+            # Parse timestamp
+            updated_at_dt = None
+            try:
+                updated_iso = conv.get('updatedAt') or conv.get('createdAt')
+                if updated_iso:
+                    from datetime import datetime as dt
+                    updated_at_dt = dt.fromisoformat(updated_iso.replace('Z', '+00:00')).replace(tzinfo=None)
+            except Exception:
+                pass
+            
+            # Upsert with correct arguments
+            upsert_hs_conversation(s, conv_id, number, subject, last_text, tags_str, updated_at_dt)
             
             # Publish event for real-time dashboard updates
-            print(f"📡 Publishing SSE event for conv_id {conv_id}, number {conv.get('number')}")
+            print(f"📡 Publishing SSE event for conv_id {conv_id}, number {number}")
             _publish_event({
                 'type': 'new_message',
                 'conv_id': conv_id,
-                'number': conv.get('number'),
-                'subject': conv.get('subject')
+                'number': number,
+                'subject': subject
             })
             print(f"✅ SSE event published successfully")
         except Exception as e:
