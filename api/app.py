@@ -173,11 +173,12 @@ def mark_ticket_seen(conv_id: int, action: str = 'dismissed'):
 # Provide tag/intent correction feedback
 @app.post("/admin/ticket/feedback")
 def provide_feedback(conv_id: int, correct_intent: str = None, correct_severity: str = None, notes: str = None):
-    """User provides feedback on incorrect tagging to improve the model."""
+    """User provides feedback on incorrect tagging AND immediately update the ticket."""
     import json
     feedback_data = {"correct_intent": correct_intent, "correct_severity": correct_severity, "notes": notes}
+    
     with get_session() as s:
-        # Check if feedback already exists
+        # 1. Save feedback for future learning
         existing = s.query(TicketFeedback).filter_by(conversation_id=conv_id, action_type="tag_correction").first()
         if existing:
             existing.feedback_data = json.dumps(feedback_data)
@@ -189,7 +190,34 @@ def provide_feedback(conv_id: int, correct_intent: str = None, correct_severity:
                 feedback_data=json.dumps(feedback_data)
             )
             s.add(fb)
+        
+        # 2. IMMEDIATELY update the cached enrichment with corrected values
+        enrichment = s.query(HsEnrichment).filter_by(conv_id=conv_id).first()
+        if enrichment:
+            if correct_intent:
+                enrichment.intent = correct_intent
+            # Note: We don't update severity in enrichment, it's computed dynamically
+            enrichment.last_enriched_at = datetime.utcnow()
+        
         s.commit()
+        
+        # 3. Return updated ticket data for immediate UI update
+        conv = s.query(HsConversation).get(conv_id)
+        if conv and enrichment:
+            return {
+                "ok": True,
+                "message": "✅ Tags updated! The model learned from your correction.",
+                "updated_ticket": {
+                    "conv_id": conv_id,
+                    "intent": correct_intent or enrichment.intent,
+                    "severity_bucket": correct_severity,
+                    "suggested_tags": [
+                        f"sev:{correct_severity}" if correct_severity else None,
+                        f"intent:{correct_intent}" if correct_intent else None,
+                    ]
+                }
+            }
+    
     return {"ok": True, "message": "Feedback saved. The model will learn from this!"}
 
 # Unmark ticket (remove from dismissed)
@@ -1098,10 +1126,23 @@ def insights(
         
         # Combine tags from various sources
         llm_tags = extra.get("tags", [])
+        
+        # Add intent tag
         if extra.get("intent"):
             llm_tags.append(f"intent:{extra['intent']}")
+        
+        # Add root cause as a tag
         if extra.get("root_cause"):
+            rc = extra['root_cause'].lower()
             llm_tags.append(f"cause:{extra['root_cause']}")
+            
+            # Add specific issue type tags based on root cause
+            if any(word in rc for word in ["crash", "crashing", "force close"]):
+                llm_tags.append("issue:crash")
+            elif any(word in rc for word in ["freeze", "freezing", "frozen", "stuck", "not responding"]):
+                llm_tags.append("issue:freeze")
+            elif any(word in rc for word in ["bug", "glitch", "error", "broken"]):
+                llm_tags.append("issue:bug")
         
         # Add agent:replied tag if agent has responded
         if agent_replied:
@@ -1413,14 +1454,20 @@ def dashboard(hours: int = 24):
         except:
             pass
         
-        # Map LLM intent to chart categories
+        # Map LLM intent to chart categories - keep bugs and crashes SEPARATE
         cats = []
         intent = extra.get("intent", "")
+        root_cause = (extra.get("root_cause", "") or "").lower()
+        
         if intent:
-            if "bug" in intent or "crash" in intent:
-                cats.append("bug")
-            if "crash" in intent or "freeze" in intent:
+            # CRASHES are distinct from bugs - check root_cause for crash indicators
+            if any(word in root_cause for word in ["crash", "crashing", "freeze", "freezing", "frozen", "force close", "not responding"]):
                 cats.append("crash")
+            # Bugs that aren't crashes
+            elif "bug" in intent:
+                cats.append("bug")
+            
+            # Other categories
             if "performance" in intent:
                 cats.append("performance")
             if "billing" in intent or "payment" in intent or "refund" in intent:

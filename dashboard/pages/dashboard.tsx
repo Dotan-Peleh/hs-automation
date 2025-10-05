@@ -157,10 +157,34 @@ const Dashboard = () => {
         correct_severity: correctSeverity,
         notes: notes,
       });
-      await fetch(`${base}/admin/ticket/feedback?${params.toString()}`, {
+      const response = await fetch(`${base}/admin/ticket/feedback?${params.toString()}`, {
         method: 'POST',
       });
-      setToastMsg('🧠 Feedback saved! Model will learn from this.');
+      
+      const result = await response.json();
+      
+      // IMMEDIATELY update the ticket in UI with corrected values
+      if (result.updated_ticket) {
+        setInsightRecs(prevRecs => 
+          prevRecs.map(rec => {
+            if (rec.conv_id === convId) {
+              return {
+                ...rec,
+                intent: correctIntent || rec.intent,
+                severity_bucket: correctSeverity || rec.severity_bucket,
+                suggested_tags: [
+                  ...(rec.suggested_tags || []).filter(t => !t.startsWith('sev:') && !t.startsWith('intent:')),
+                  correctSeverity ? `sev:${correctSeverity}` : null,
+                  correctIntent ? `intent:${correctIntent}` : null,
+                ].filter(Boolean)
+              };
+            }
+            return rec;
+          })
+        );
+      }
+      
+      setToastMsg('✅ Tags updated instantly! Model learned from your correction.');
       setTimeout(() => setToastMsg(''), 4000);
       setFeedbackTicket(null);
     } catch (e) {

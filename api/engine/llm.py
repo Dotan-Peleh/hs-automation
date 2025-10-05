@@ -20,8 +20,17 @@ SYSTEM = (
     '  "tags": ["keyword1", "keyword2", "keyword3"],\n'
     '  "summary": "One sentence under 15 words describing the specific user problem"\n'
     "}\n\n"
-    "Examples of valid intent values: bug_report, billing_issue, lost_progress, feedback, question, feature_request, refund_request.\n"
-    "Examples of valid tags: crash, android, ios, payment, progress, freeze, stuck, coins, energy.\n\n"
+    "IMPORTANT DISTINCTIONS:\n"
+    '- Use root_cause "game crashing on launch" for app crashes (app closes/stops working)\n'
+    '- Use root_cause "gameplay bug/glitch" for bugs that don\'t crash the app (items missing, wrong behavior, etc.)\n'
+    '- Use root_cause "app freezing/stuck" for UI freezes (app doesn\'t crash but stops responding)\n\n'
+    "Valid intent values:\n"
+    "- bug_report: for bugs/glitches that don't crash the app\n"
+    "- crash_report: for app crashes/force closes\n"
+    "- billing_issue: payment/purchase/refund problems\n"
+    "- lost_progress: save data lost\n"
+    "- feedback: general feedback/compliments\n"
+    "- question: how-to questions\n\n"
     "Output ONLY the JSON object. No other text."
 )
 
