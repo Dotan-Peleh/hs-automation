@@ -1286,29 +1286,52 @@ def insights(
             "last_seen": meta.get("last_seen"),
         }
 
-    # Generate global summary (page 1 only) - ALWAYS generate
+    # Generate global summary (page 1 only) - REAL insights, not generic stats
     global_summary = ""
     if int(page) == 1 and recs:
         try:
-            # Always use simple summary (works without LLM)
             total_tickets = len(recs)
             high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
-            intents = {}
-            for r in recs:
-                intent = r.get('intent') or 'unknown'
-                if intent and intent != 'unknown':
-                    intents[intent] = intents.get(intent, 0) + 1
             
-            if intents:
-                top_intent = max(intents.items(), key=lambda x: x[1])[0]
-                top_intent_clean = str(top_intent).replace('_', ' ') if top_intent else 'support'
-            else:
-                top_intent_clean = 'support'
+            # Collect root causes (actual problems, not intents)
+            root_causes = {}
+            platforms = {}
+            for r in recs:
+                rc = r.get('root_cause', '')
+                if rc and len(rc) > 5:  # Real causes, not empty strings
+                    root_causes[rc] = root_causes.get(rc, 0) + 1
+                
+                # Extract platform from tags
+                for tag in r.get('suggested_tags', []):
+                    if tag in ['android', 'ios', 'ipad', 'mobile']:
+                        platforms[tag] = platforms.get(tag, 0) + 1
+            
+            # Find the most common specific problem
+            top_problem = None
+            if root_causes:
+                top_problem = max(root_causes.items(), key=lambda x: x[1])
+            
+            # Build insightful summary
+            parts = []
             
             if high_critical > 0:
-                global_summary = f"⚠️ {high_critical} high/critical issues need attention out of {total_tickets} total tickets. Most common: {top_intent_clean}."
+                parts.append(f"⚠️ {high_critical} critical issues")
+            
+            if top_problem and top_problem[1] >= 3:
+                parts.append(f"trending issue: '{top_problem[0]}' ({top_problem[1]} reports)")
+            elif top_problem:
+                parts.append(f"top issue: '{top_problem[0]}'")
+            
+            if platforms:
+                top_platform = max(platforms.items(), key=lambda x: x[1])
+                if top_platform[1] >= 5:
+                    parts.append(f"mainly {top_platform[0]} users ({top_platform[1]} tickets)")
+            
+            if parts:
+                global_summary = " | ".join(parts) + f" | {total_tickets} total"
             else:
-                global_summary = f"✅ No critical issues. {total_tickets} tickets, mostly {top_intent_clean} requests."
+                global_summary = f"✅ {total_tickets} tickets, no major patterns detected"
+                
         except Exception as e:
             global_summary = f"Analysis error: {e}"  # Debug what's wrong
 
