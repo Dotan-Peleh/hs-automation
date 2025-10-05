@@ -286,15 +286,14 @@ const Dashboard = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Correct Intent</label>
                 <select id="intent-select" className="w-full px-3 py-2 border border-gray-300 rounded-lg">
                   <option value="">Keep current</option>
-                  <option value="bug_report">🐛 Bug/Crash Report</option>
-                  <option value="how_to">❓ How-To Question</option>
+                  <option value="crash_report">💥 Crash (App Closes/Freezes)</option>
+                  <option value="bug_report">🐛 Bug (Gameplay Issue)</option>
+                  <option value="billing_issue">💳 Billing/Payment Issue</option>
                   <option value="refund_request">💰 Refund Request</option>
                   <option value="cancel_subscription">🚫 Cancel Subscription</option>
-                  <option value="recover_progress">💾 Lost Progress</option>
-                  <option value="account_access">🔐 Account Access</option>
-                  <option value="monetization_complaint">💸 Monetization Feedback</option>
-                  <option value="gameplay_feedback">🎮 Gameplay Feedback</option>
-                  <option value="beta_feedback">💭 Beta Feedback</option>
+                  <option value="lost_progress">💾 Lost Progress/Save Issue</option>
+                  <option value="question">❓ How-To Question</option>
+                  <option value="feedback">💭 Feedback/Compliment</option>
                 </select>
               </div>
               
@@ -429,10 +428,12 @@ const Dashboard = () => {
                 
                 const getIntentLabel = () => {
                   if (intent.includes('beta') || intent === 'beta_feedback') return '💭 Beta Feedback';
-                  if (intent.includes('bug') || intent.includes('crash')) return '🐛 Bug/Crash';
-                  if (intent.includes('how_to')) return '❓ How-To';
+                  if (intent.includes('crash') || intent === 'crash_report') return '💥 Crash';
+                  if (intent.includes('bug')) return '🐛 Bug';
+                  if (intent.includes('how_to') || intent === 'question') return '❓ How-To';
                   if (intent.includes('refund')) return '💰 Refund';
                   if (intent.includes('cancel')) return '🚫 Cancel Sub';
+                  if (intent.includes('billing') || intent.includes('payment')) return '💳 Billing';
                   if (intent.includes('progress')) return '💾 Lost Progress';
                   if (intent.includes('account')) return '🔐 Account';
                   if (intent.includes('monetization') || intent.includes('complaint')) return '💸 Monetization';
@@ -809,10 +810,12 @@ const Dashboard = () => {
               
               const getIntentLabel = () => {
                 if (intent.includes('beta') || intent === 'beta_feedback') return '💭 Beta Feedback';
-                if (intent.includes('bug') || intent.includes('crash')) return '🐛 Bug/Crash';
-                if (intent.includes('how_to')) return '❓ How-To';
+                if (intent.includes('crash') || intent === 'crash_report') return '💥 Crash';
+                if (intent.includes('bug')) return '🐛 Bug';
+                if (intent.includes('how_to') || intent === 'question') return '❓ How-To';
                 if (intent.includes('refund')) return '💰 Refund';
                 if (intent.includes('cancel')) return '🚫 Cancel Sub';
+                if (intent.includes('billing') || intent.includes('payment')) return '💳 Billing';
                 if (intent.includes('progress')) return '💾 Lost Progress';
                 if (intent.includes('account')) return '🔐 Account';
                 if (intent.includes('performance')) return '⚡ Performance';

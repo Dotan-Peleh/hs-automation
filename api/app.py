@@ -63,7 +63,7 @@ def _publish_event(ev: dict):
                 try:
                     _subscribers.remove(q)
                 except:
-                    pass
+                pass
     except Exception as e:
         print(f"ERROR: Failed to publish event: {e}")
 
@@ -85,7 +85,7 @@ async def events_stream():
             while True:
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=30.0)
-                    yield f"data: {ev}\n\n"
+                yield f"data: {ev}\n\n"
                 except asyncio.TimeoutError:
                     # Send keepalive every 30 seconds
                     yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time()})}\n\n"
@@ -332,8 +332,8 @@ def _vector_upsert_one(conv_id: int, number: int | None, subject: str | None, te
 async def process_webhook_event(conv_id: int):
     """(Async) Fetch full conversation, enrich, and store. This is slow."""
     with get_session() as s:
-        try:
-            conv = helpscout.fetch_conversation(conv_id)
+    try:
+        conv = helpscout.fetch_conversation(conv_id)
             if not conv: return
             
             # Extract fields from conversation object
@@ -375,14 +375,14 @@ async def process_webhook_event(conv_id: int):
             
             # Publish event for real-time dashboard updates
             print(f"📡 Publishing SSE event for conv_id {conv_id}, number {number}")
-            _publish_event({
+                    _publish_event({
                 'type': 'new_message',
                 'conv_id': conv_id,
                 'number': number,
                 'subject': subject
             })
             print(f"✅ SSE event published successfully")
-        except Exception as e:
+    except Exception as e:
             print(f"❌ ERROR: Webhook processing failed for conv_id {conv_id}: {e}")
             import traceback
             traceback.print_exc()
@@ -672,7 +672,7 @@ def insights(
             
             # Store this status to be used in the final recs object
             c.agent_replied_status = agent_replied
-            
+
     # Remove markup/boilerplate tokens from keyword list
     BAN_TOKENS = set([
         'div','span','table','tbody','thead','tr','td','th','style','class','width','height','align','center',
@@ -697,7 +697,7 @@ def insights(
 
     def add_keywords_smart(text: str):
         # gensim_keywords is not available, skip this feature
-        return
+                return
 
     import re
 
@@ -740,7 +740,7 @@ def insights(
         elif has_issue:
             return 'negative'
         return 'neutral'
-    
+
     def derive_custom_tags(text: str, entities: dict, cats: list[str] | None, extra: dict | None) -> list[str]:
         t = (text or '').lower()
         tags: list[str] = []
@@ -777,7 +777,7 @@ def insights(
         elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
             # Make sure it's not just mentioning login in passing
             if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
-                tags.append("intent:account_access")
+            tags.append("intent:account_access")
         if any(k in t for k in ("delete my account", "delete account", "remove my data", "erase my data", "gdpr", "ccpa")):
             tags.append("intent:account_deletion")
         # Store login issues (specific pattern from Google Play Console / App Store)
@@ -1016,14 +1016,14 @@ def insights(
             if first_sentence and len(first_sentence) > 30:
                 label = first_sentence[:100]  # Cap at 100 chars
             else:
-                label = intent_map.get(intent, primary_cat or 'support request')
+            label = intent_map.get(intent, primary_cat or 'support request')
             
             parts = []
             # Only add severity prefix for high/critical
             if bucket and str(bucket).lower() in ("high","critical"):
                 parts.append(str(bucket).lower())
             if not first_sentence or len(first_sentence) < 30:
-                parts.append(label)
+            parts.append(label)
             if appv:
                 parts.append(f"v{appv}")
             if isinstance(lvl, int):
@@ -1061,14 +1061,15 @@ def insights(
 
         cached = None
         if content_hash:
-            try:
+        try:
                 cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id).first()
-            except Exception:
-                cached = None
+        except Exception:
+            cached = None
         
-        # Use cache if available AND content hasn't changed
-        if cached and getattr(cached, 'content_hash', None) == content_hash:
-            # Content unchanged, use cached data (even if incomplete - saves tokens)
+        # Use cache ONLY if content unchanged AND has complete data (including root_cause)
+        has_root_cause = getattr(cached, 'root_cause', None) and len(str(getattr(cached, 'root_cause', ''))) > 3
+        if cached and getattr(cached, 'content_hash', None) == content_hash and has_root_cause:
+            # Content unchanged and cache is complete, use it
             print(f"✅ Using cached enrichment for #{c.number} (content_hash match)")
             extra = {
                 "summary": getattr(cached, 'summary', None),
@@ -1144,9 +1145,7 @@ def insights(
             elif any(word in rc for word in ["bug", "glitch", "error", "broken"]):
                 llm_tags.append("issue:bug")
         
-        # Add agent:replied tag if agent has responded
-        if agent_replied:
-            llm_tags.append("agent:replied")
+        # NOTE: agent:replied is added to existing_tags below, not here
             
         final_tags = list(set(llm_tags)) # Simplified, as other sources were removed
         
@@ -1167,6 +1166,10 @@ def insights(
         existing_tags = []
         if c.tags:
             existing_tags = [t.strip() for t in c.tags.split(',') if t.strip()]
+        
+        # Add agent:replied to existing tags (it's a behavioral tag, not LLM-generated)
+        if agent_replied and 'agent:replied' not in existing_tags:
+            existing_tags.append('agent:replied')
         
         # Compute cluster key
         cluster_key = fingerprint.cluster_key(raw, entities)
@@ -1248,12 +1251,12 @@ def insights(
         payment_keywords = {"payment", "purchase", "charged", "refund", "billing", "subscription", "iap", "in-app-purchase"}
         if "payment" in cats_l or any(keyword in tags_l for keyword in payment_keywords):
             if r["severity_bucket"] == "low":
-                r["severity_bucket"] = "medium"
+            r["severity_bucket"] = "medium"
         # Progress lost is at least medium
         progress_keywords = {"progress", "save", "lost", "reset", "rollback", "disappeared", "missing"}
         if "progress_lost" in cats_l or any(keyword in tags_l for keyword in progress_keywords):
             if r["severity_bucket"] == "low":
-                r["severity_bucket"] = "medium"
+            r["severity_bucket"] = "medium"
         # Store issues should be at least medium (affects revenue)
         if "tag:store_issue" in tags_l and r["severity_bucket"] == "low":
             r["severity_bucket"] = "medium"
@@ -1479,7 +1482,7 @@ def dashboard(hours: int = 24):
         
         # Fallback to basic categorization if no intent
         if not cats:
-            cats, rule_score = classify.categorize(raw.lower())
+        cats, rule_score = classify.categorize(raw.lower())
         else:
             rule_score = 0
         sev_score = severity.compute(raw, entities, rule_score)

@@ -28,6 +28,7 @@ SYSTEM = (
     "- bug_report: for bugs/glitches that don't crash the app\n"
     "- crash_report: for app crashes/force closes\n"
     "- billing_issue: payment/purchase/refund problems\n"
+    "- cancel_subscription: user wants to cancel/stop subscription\n"
     "- lost_progress: save data lost\n"
     "- feedback: general feedback/compliments\n"
     "- question: how-to questions\n\n"
