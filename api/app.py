@@ -397,7 +397,7 @@ async def process_webhook_event(conv_id: int):
                 'subject': subject
             })
             print(f"✅ SSE event published successfully")
-    except Exception as e:
+        except Exception as e:
             print(f"❌ ERROR: Webhook processing failed for conv_id {conv_id}: {e}")
             import traceback
             traceback.print_exc()
