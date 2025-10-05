@@ -45,28 +45,38 @@ const Dashboard = () => {
 
       if (recsRes.ok) {
         const recsData = await recsRes.json();
+        
+        // On first load or when prevRecs is empty, just set all recommendations
         setInsightRecs(prevRecs => {
+          // If this is the first load (no previous tickets), just use the API data
+          if (prevRecs.length === 0) {
+            const tickets = recsData.recommendations || [];
+            localStorage.setItem('insightRecs', JSON.stringify(tickets));
+            return tickets;
+          }
+          
+          // Otherwise, merge new tickets with existing ones
           const existingIds = new Set(prevRecs.map(r => r.conv_id));
-          const newTickets = recsData.recommendations.filter((r: any) => !existingIds.has(r.conv_id));
+          const newTickets = (recsData.recommendations || []).filter((r: any) => !existingIds.has(r.conv_id));
+          
           if (newTickets.length > 0) {
             setToastMsg(`🔔 ${newTickets.length} new tickets arrived!`);
             setTimeout(() => setToastMsg(''), 5000);
-          }
-          const merged = [...newTickets.map((t:any)=>({...t, __new: true})), ...prevRecs];
-          const final = Array.from(new Map(merged.map(item => [item.id, item])).values()).slice(0, 200);
-          localStorage.setItem('insightRecs', JSON.stringify(final));
-
-          // After a short delay, remove the '__new' flag to stop the highlight
-          if (newTickets.length > 0) {
+            
+            // Mark new tickets and remove the flag after 8 seconds
             setTimeout(() => {
               setInsightRecs(currentRecs => 
                 currentRecs.map(rec => ({ ...rec, __new: false }))
               );
-            }, 8000); // Keep highlight for 8 seconds
+            }, 8000);
           }
           
+          const merged = [...newTickets.map((t:any)=>({...t, __new: true})), ...prevRecs];
+          const final = Array.from(new Map(merged.map(item => [item.conv_id, item])).values()).slice(0, 200);
+          localStorage.setItem('insightRecs', JSON.stringify(final));
           return final;
         });
+        
         if (recsData.global_summary) setGlobalSummary(recsData.global_summary);
         if (recsData.issue_analysis) setIssueAnalysis(recsData.issue_analysis);
       }
