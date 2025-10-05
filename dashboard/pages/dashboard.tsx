@@ -46,8 +46,8 @@ const Dashboard = () => {
       if (recsRes.ok) {
         const recsData = await recsRes.json();
         setInsightRecs(prevRecs => {
-          const existingIds = new Set(prevRecs.map(r => r.id));
-          const newTickets = recsData.recommendations.filter((r: any) => !existingIds.has(r.id));
+          const existingIds = new Set(prevRecs.map(r => r.conv_id));
+          const newTickets = recsData.recommendations.filter((r: any) => !existingIds.has(r.conv_id));
           if (newTickets.length > 0) {
             setToastMsg(`🔔 ${newTickets.length} new tickets arrived!`);
             setTimeout(() => setToastMsg(''), 5000);
@@ -372,10 +372,10 @@ const Dashboard = () => {
           <AlertCircle className="w-5 h-5 text-red-600" />
           🚨 Priority Tickets (Critical & High)
         </h3>
-          {insightRecs.filter((r:any)=> !r.__loading && r.severity_bucket && ['critical','high'].includes(r.severity_bucket.toLowerCase()) && !dismissedIds.has(r.id)).length > 0 ? (
+          {insightRecs.filter((r:any)=> !r.__loading && r.severity_bucket && ['critical','high'].includes(r.severity_bucket.toLowerCase()) && !dismissedIds.has(r.conv_id)).length > 0 ? (
             <div className="space-y-3">
               {insightRecs
-                .filter((r:any)=> !r.__loading && r.severity_bucket && ['critical','high'].includes(r.severity_bucket.toLowerCase()) && !dismissedIds.has(r.id))
+                .filter((r:any)=> !r.__loading && r.severity_bucket && ['critical','high'].includes(r.severity_bucket.toLowerCase()) && !dismissedIds.has(r.conv_id))
                 .slice(0, 5)
                 .map((r:any)=> {
                 const intentTag = (r.suggested_tags || []).find((t: string) => t.startsWith('intent:'));
@@ -407,7 +407,7 @@ const Dashboard = () => {
                 };
 
                 return (
-                  <div key={r.id} className={`border-2 rounded-lg p-4 ${getIntentColor()}`}>
+                  <div key={r.conv_id} className={`border-2 rounded-lg p-4 ${getIntentColor()}`}>
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -493,7 +493,7 @@ const Dashboard = () => {
                           </a>
                         )}
                         <button
-                          onClick={() => markAsSeen(r.id)}
+                          onClick={() => markAsSeen(r.conv_id)}
                           className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-green-100 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-200 transition-colors border border-green-300"
                         >
                           ✓ Mark as Done
@@ -790,7 +790,7 @@ const Dashboard = () => {
               };
 
               return (
-                <div key={r.id} className={`border rounded-lg p-3 ${getIntentColor()} ${r.__new ? 'ring-2 ring-green-400 shadow-lg' : ''} ${r.is_done ? 'opacity-60 bg-gray-50' : ''} transition-all`}>
+                <div key={r.conv_id} className={`border rounded-lg p-3 ${getIntentColor()} ${r.__new ? 'ring-2 ring-green-400 shadow-lg' : ''} ${r.is_done ? 'opacity-60 bg-gray-50' : ''} transition-all`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -917,15 +917,15 @@ const Dashboard = () => {
                     <div className="flex-shrink-0 flex flex-col gap-2">
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => markAsSeen(r.id)}
+                          onClick={() => markAsSeen(r.conv_id)}
                           className={`p-2 rounded-lg transition-colors ${
-                            dismissedIds.has(r.id)
+                            dismissedIds.has(r.conv_id)
                               ? 'bg-green-100 text-green-700 border border-green-300'
                               : 'bg-gray-100 text-gray-400 border border-gray-200 hover:bg-gray-200 hover:text-gray-600'
                           }`}
-                          title={dismissedIds.has(r.id) ? 'Mark as not done' : 'Mark as done'}
+                          title={dismissedIds.has(r.conv_id) ? 'Mark as not done' : 'Mark as done'}
                         >
-                          {dismissedIds.has(r.id) ? '✓' : '○'}
+                          {dismissedIds.has(r.conv_id) ? '✓' : '○'}
                         </button>
                     {r.hs_link && (
                           <a
