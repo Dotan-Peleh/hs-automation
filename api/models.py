@@ -54,6 +54,10 @@ class HsConversation(Base):
     subject = Column(Text, nullable=True)
     last_text = Column(Text, nullable=True)
     tags = Column(Text, nullable=True)
+    customer_name = Column(Text, nullable=True)  # Full name from Help Scout
+    first_name = Column(String(128), nullable=True)  # Customer first name
+    last_name = Column(String(128), nullable=True)  # Customer last name
+    game_user_id = Column(String(64), nullable=True)  # Game UserID extracted from message
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 class HsEnrichment(Base):
@@ -193,7 +197,7 @@ def get_hs_tokens(s):
 
 # read-only backfill upsert
 
-def upsert_hs_conversation(s, conv_id: int, number: int | None, subject: str | None, last_text: str | None, tags_str: str | None, updated_at_dt: datetime | None = None):
+def upsert_hs_conversation(s, conv_id: int, number: int | None, subject: str | None, last_text: str | None, tags_str: str | None, updated_at_dt: datetime | None = None, customer_name: str | None = None, first_name: str | None = None, last_name: str | None = None, game_user_id: str | None = None):
     row = s.query(HsConversation).get(conv_id)
     if not row:
         row = HsConversation(id=conv_id)
@@ -202,6 +206,10 @@ def upsert_hs_conversation(s, conv_id: int, number: int | None, subject: str | N
     row.subject = subject
     row.last_text = last_text
     row.tags = tags_str
+    row.customer_name = customer_name
+    row.first_name = first_name
+    row.last_name = last_name
+    row.game_user_id = game_user_id
     if updated_at_dt:
         row.updated_at = updated_at_dt
     else:

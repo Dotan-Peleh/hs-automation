@@ -505,10 +505,12 @@ const Dashboard = () => {
                             })}
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
-                          {r.customer_name && <span>👤 {r.customer_name}</span>}
-                          {r.distinct_id && (
-                            <span className="px-2 py-0.5 rounded bg-gray-100 font-mono text-gray-800">
-                              ID: {r.distinct_id}
+                          {(r.first_name || r.last_name) && (
+                            <span className="font-semibold">👤 {r.first_name} {r.last_name}</span>
+                          )}
+                          {r.game_user_id && (
+                            <span className="px-2 py-0.5 rounded bg-purple-50 font-mono text-purple-700 border border-purple-200 text-xs">
+                              🎮 {r.game_user_id.slice(0, 8)}...{r.game_user_id.slice(-4)}
                             </span>
                           )}
                           {r.entities?.platform && <span>📱 {r.entities.platform}</span>}
@@ -940,10 +942,12 @@ const Dashboard = () => {
                         <div className="text-xs text-gray-700 mb-1">{r.one_liner}</div>
                       )}
                       <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
-                        {r.customer_name && <span>👤 {r.customer_name}</span>}
-                        {r.distinct_id && (
-                          <span className="px-2 py-0.5 rounded bg-gray-100 font-mono text-gray-800">
-                            ID: {r.distinct_id}
+                        {(r.first_name || r.last_name) && (
+                          <span className="font-semibold">👤 {r.first_name} {r.last_name}</span>
+                        )}
+                        {r.game_user_id && (
+                          <span className="px-2 py-0.5 rounded bg-purple-50 font-mono text-purple-700 border border-purple-200">
+                            🎮 {r.game_user_id.slice(0, 8)}...{r.game_user_id.slice(-4)}
                           </span>
                         )}
                         {r.entities?.platform && <span>📱 {r.entities.platform}</span>}

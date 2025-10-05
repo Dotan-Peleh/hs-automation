@@ -332,8 +332,8 @@ def _vector_upsert_one(conv_id: int, number: int | None, subject: str | None, te
 async def process_webhook_event(conv_id: int):
     """(Async) Fetch full conversation, enrich, and store. This is slow."""
     with get_session() as s:
-    try:
-        conv = helpscout.fetch_conversation(conv_id)
+        try:
+            conv = helpscout.fetch_conversation(conv_id)
             if not conv: return
             
             # Extract fields from conversation object
@@ -342,6 +342,20 @@ async def process_webhook_event(conv_id: int):
             last_text = helpscout.extract_text(conv)
             raw_tags = conv.get('tags') or []
             tag_names = [t.get('tag') if isinstance(t, dict) else str(t) for t in raw_tags]
+            
+            # Extract customer info (name and game UserID)
+            first_name, last_name = helpscout.extract_customer_name(conv)
+            customer_name = f"{first_name or ''} {last_name or ''}".strip() or None
+            
+            # Extract UserID from message text (format: "UserId = XXXX" or "userid: XXXX")
+            user_id = None
+            try:
+                import re
+                match = re.search(r'(?i)user\s*id\s*[=:]\s*([a-f0-9]{24})', last_text or '')
+                if match:
+                    user_id = match.group(1)
+            except Exception:
+                pass
             
             # Check if agent has replied (look at threads)
             threads = conv.get('_embedded', {}).get('threads', []) if '_embedded' in conv else []
@@ -358,7 +372,7 @@ async def process_webhook_event(conv_id: int):
                 tag_names.append('agent:replied')
             
             tags_str = ','.join([t for t in tag_names if t])
-            print(f"📋 Ticket #{number}: Tags = {tags_str}, Agent replied = {agent_replied}")
+            print(f"📋 Ticket #{number}: Customer={customer_name}, UserID={user_id}, Tags={tags_str}, Agent replied={agent_replied}")
             
             # Parse timestamp
             updated_at_dt = None
@@ -370,8 +384,8 @@ async def process_webhook_event(conv_id: int):
             except Exception:
                 pass
             
-            # Upsert with correct arguments
-            upsert_hs_conversation(s, conv_id, number, subject, last_text, tags_str, updated_at_dt)
+            # Upsert with correct arguments (including customer info)
+            upsert_hs_conversation(s, conv_id, number, subject, last_text, tags_str, updated_at_dt, customer_name, first_name, last_name, user_id)
             
             # Publish event for real-time dashboard updates
             print(f"📡 Publishing SSE event for conv_id {conv_id}, number {number}")
@@ -1177,6 +1191,17 @@ def insights(
         # Check if dismissed
         is_dismissed = c.id in dismissed_ids
         
+        # Extract game UserID from message text
+        game_user_id = getattr(c, 'game_user_id', None)
+        if not game_user_id and c.last_text:
+            try:
+                import re
+                match = re.search(r'(?i)user\s*id\s*[=:]\s*([a-f0-9]{24})', c.last_text)
+                if match:
+                    game_user_id = match.group(1)
+            except Exception:
+                pass
+        
         # Build recommendation object
         rec = {
             "conv_id": c.id,
@@ -1194,6 +1219,9 @@ def insights(
             "intent": extra.get("intent"),
             "root_cause": extra.get("root_cause"),
             "customer_name": getattr(c, 'customer_name', None),
+            "first_name": getattr(c, 'first_name', None),
+            "last_name": getattr(c, 'last_name', None),
+            "game_user_id": game_user_id,
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             "hs_link": f"https://secure.helpscout.net/conversation/{c.id}",
             "is_dismissed": is_dismissed,
