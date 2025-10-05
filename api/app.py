@@ -1120,7 +1120,7 @@ def insights(
             "existing_tags": existing_tags,
             "intent": extra.get("intent"),
             "root_cause": extra.get("root_cause"),
-            "customer_name": c.customer_name,
+            "customer_name": getattr(c, 'customer_name', None),
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             "hs_link": f"https://secure.helpscout.net/conversation/{c.id}",
             "is_dismissed": is_dismissed,
