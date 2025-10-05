@@ -36,10 +36,11 @@ except Exception as e:
 
 app = FastAPI(title="HS Trends", version="2.0")  # Force redeploy
 
-# Configure CORS to allow requests from the Vercel dashboard
+# This is the simplest possible CORS configuration to allow all origins.
+# This will fix the CORS error.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://hs-automation.vercel.app", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,7 +98,7 @@ async def events_stream():
             except:
                 pass
     
-    return StreamingResponse(event_gen(), media_type="text/plain")
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 @app.get("/admin/poll")
 def poll_for_updates(since: int = 0):
