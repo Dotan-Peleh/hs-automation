@@ -55,6 +55,16 @@ const Dashboard = () => {
           const merged = [...newTickets.map((t:any)=>({...t, __new: true})), ...prevRecs];
           const final = Array.from(new Map(merged.map(item => [item.id, item])).values()).slice(0, 200);
           localStorage.setItem('insightRecs', JSON.stringify(final));
+
+          // After a short delay, remove the '__new' flag to stop the highlight
+          if (newTickets.length > 0) {
+            setTimeout(() => {
+              setInsightRecs(currentRecs => 
+                currentRecs.map(rec => ({ ...rec, __new: false }))
+              );
+            }, 8000); // Keep highlight for 8 seconds
+          }
+          
           return final;
         });
         if (recsData.global_summary) setGlobalSummary(recsData.global_summary);

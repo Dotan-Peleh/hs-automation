@@ -989,17 +989,18 @@ def insights(
         extra = {}
         content_hash = None
         try:
-            import hashlib
-            content_hash = hashlib.sha256(((c.last_text or '')).encode('utf-8')).hexdigest()
+            content_hash = hashlib.sha256(raw.encode('utf-8')).hexdigest()
         except Exception:
             pass
+
         cached = None
-        try:
-            with get_session() as _s:
-                cached = _s.query(HsEnrichment).get(c.id)
-        except Exception:
-            cached = None
-        if cached and cached.content_hash == content_hash:
+        if content_hash:
+            try:
+                cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id, HsEnrichment.content_hash == content_hash).first()
+            except Exception:
+                cached = None
+        
+        if cached:
             # Hydrate from cache without calling LLM
             print(f"✅ Using cached enrichment for #{c.number}")
             extra = {
@@ -1022,7 +1023,6 @@ def insights(
                             s_upsert.add(row)
                         row.content_hash = content_hash
                         row.summary = extra.get('summary')
-                        row.one_liner = extra.get('summary') # Use LLM summary as one_liner
                         row.tags = ','.join(extra.get('tags', []))
                         row.intent = extra.get('intent')
                         row.root_cause = extra.get('root_cause')
@@ -1031,21 +1031,15 @@ def insights(
                         print(f"💾 Cached enrichment for #{c.number}")
                 except Exception as e:
                     print(f"❌ DB Error: Failed to cache enrichment for #{c.number}. Error: {e}")
-                    # Don't block on db error, just log it
             else:
                 print(f"⚠️ LLM enrichment failed for #{c.number}. Will use basic extraction.")
         
         # --- Build final ticket object ---
         
         one_liner = extra.get("summary")
-        # Fallback if LLM failed or provided no summary
+        # Fallback if LLM failed
         if not one_liner:
-            # ... (simple extraction logic remains here as a backup)
-            raw_text = (c.last_text or c.subject or '').strip()
-            if raw_text:
-                lines = raw_text.split('\n')
-                for line in lines:
-                    # ... (rest of simple extraction)
+            one_liner = c.subject or "No description available"
         
         # Combine tags from various sources
         llm_tags = extra.get("tags", [])
@@ -1054,10 +1048,11 @@ def insights(
         if extra.get("root_cause"):
             llm_tags.append(f"cause:{extra['root_cause']}")
             
-        final_tags = list(set(custom_wo_intent + llm_tags))
+        final_tags = list(set(llm_tags)) # Simplified, as other sources were removed
         suggested_tags = [f"sev:{bucket}"] + final_tags
         
-        # ... (rest of the processing to build the 'recs' object)
+        # best-effort: fetch customer name for display
+        customer_name = None
 
     # Post-process: adjust severity by repetition and categories
     for r in recs:

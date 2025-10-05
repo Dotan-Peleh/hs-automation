@@ -50,6 +50,11 @@ def enrich(text: str) -> dict:
         
         print(f"🤖 LLM raw response: {raw}")
         
+        # Handle empty response from LLM
+        if not raw:
+            print("❌ LLM returned an empty response.")
+            return {}
+
         # try parse JSON; if the model wrapped with code fences, strip them
         if raw.startswith("```"):
             raw = raw.strip("`\n ")
