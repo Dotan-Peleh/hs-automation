@@ -1108,33 +1108,8 @@ def insights(
                 "tags": (getattr(cached, 'tags', '') or '').split(',') if getattr(cached, 'tags', '') else [],
             }
         else:
-            # Content changed or no cache - call LLM
-            if cached:
-                print(f"🔄 Content changed for #{c.number}, re-enriching...")
-            else:
-                print(f"🆕 New ticket #{c.number}, enriching...")
-            extra = llm.enrich(raw)
-            if extra.get("summary"):
-                print(f"✅ LLM enriched #{c.number}: '{extra.get('summary')}'")
-                # Persist enrichment for future runs (reuse existing session to avoid pool exhaustion)
-                try:
-                    row = s.query(HsEnrichment).get(c.id)
-                    if not row:
-                        row = HsEnrichment(conv_id=c.id)
-                        s.add(row)
-                    row.content_hash = content_hash
-                    row.summary = extra.get('summary')
-                    row.tags = ','.join(extra.get('tags', []))
-                    row.intent = extra.get('intent')
-                    row.root_cause = extra.get('root_cause')
-                    row.last_enriched_at = datetime.utcnow()
-                    s.commit()
-                    print(f"💾 Cached enrichment for #{c.number}")
-                except Exception as e:
-                    print(f"❌ DB Error: Failed to cache enrichment for #{c.number}. Error: {e}")
-                    s.rollback()  # Rollback on error to keep session healthy
-            else:
-                print(f"⚠️ LLM enrichment failed for #{c.number}. Will use basic extraction.")
+            # No cache - webhook hasn't enriched this yet
+            extra = {}
         
         # --- Build final ticket object ---
         
@@ -1753,7 +1728,7 @@ def aggregates(hours: int = 24, limit: int = 50):
         entities = classify.extract_entities(text)
         cats, _ = classify.categorize(text)
         # Optional Claude enrichment
-        extra = llm.enrich(text) if llm.is_enabled() else {}
+        extra = {}  # Cache only - no LLM
         if extra.get("categories"):
             cats = sorted(set((cats or []) + (extra.get("categories") or [])))
         key = fingerprint.cluster_key(text, entities)
@@ -1790,7 +1765,7 @@ def topic_stats(hours: int = 24):
         text = raw.lower()
         cats, _ = classify.categorize(text)
         # Optional Claude enrichment
-        extra = llm.enrich(raw) if llm.is_enabled() else {}
+        extra = {}  # Cache only - no LLM
         if extra.get("categories"):
             cats = sorted(set((cats or []) + (extra.get("categories") or [])))
         for cat in (cats or []):
