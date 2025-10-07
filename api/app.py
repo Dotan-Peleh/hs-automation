@@ -49,7 +49,7 @@ try:
 except Exception as e:
     print(f"⚠️  Database table creation warning: {e}")
 
-app = FastAPI(title="HS Trends", version="2.2")  # Force redeploy with pool fix
+app = FastAPI(title="HS Trends", version="3.0")  # Clean rebuild with working enrichment
 
 # CRITICAL: CORS must be configured FIRST before any other middleware
 # This allows all origins to prevent CORS blocking
