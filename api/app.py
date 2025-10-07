@@ -168,6 +168,29 @@ def reply(conv_id: int, text: str):
 def healthz():
     return {"status": "ok"}
 
+@app.get("/admin/system-status")
+async def system_status():
+    """Comprehensive system status check"""
+    with get_session() as s:
+        total_tickets = s.query(HsConversation).count()
+        enriched_tickets = s.query(HsEnrichment).count()
+        recent_tickets = s.query(HsConversation).filter(
+            HsConversation.updated_at >= datetime.utcnow() - timedelta(hours=24)
+        ).count()
+        
+    return {
+        "version": "3.0",
+        "slack_configured": bool(slack.BOT and slack.DEFAULT_CH),
+        "llm_configured": llm.is_enabled(),
+        "database": {
+            "total_tickets": total_tickets,
+            "enriched_tickets": enriched_tickets,
+            "enrichment_rate": f"{(enriched_tickets/total_tickets*100):.1f}%" if total_tickets > 0 else "0%",
+            "recent_24h": recent_tickets
+        },
+        "status": "operational"
+    }
+
 # Mark ticket as seen/dismissed
 @app.post("/admin/ticket/mark_seen")
 def mark_ticket_seen(conv_id: int, action: str = 'dismissed'):
