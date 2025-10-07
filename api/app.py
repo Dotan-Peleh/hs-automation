@@ -276,6 +276,34 @@ async def enrich_from_database(limit: int = 20):
             "message": f"Enriched {enriched_count}/{len(unenriched)} tickets from database"
         }
 
+@app.get("/admin/test-slack")
+async def test_slack():
+    """Test Slack connection"""
+    if not slack.BOT or not slack.DEFAULT_CH:
+        return {"ok": False, "error": "Slack not configured", "bot": bool(slack.BOT), "channel": bool(slack.DEFAULT_CH)}
+    
+    try:
+        result = slack.send_ticket_alert(
+            ticket_number=9999,
+            subject="🧪 TEST ALERT - Slack Integration Working!",
+            severity="medium",
+            intent="test",
+            root_cause="This is a test message to verify Slack integration",
+            summary="Testing Slack notifications for Help Scout alerts",
+            tags=["test", "slack", "integration"],
+            hs_link="https://secure.helpscout.net/",
+            customer_name="Test User",
+            game_user_id="test123456789"
+        )
+        
+        return {
+            "ok": result,
+            "message": "✅ Test message sent! Check your Slack channel." if result else "❌ Failed to send. Check Render logs.",
+            "channel": slack.DEFAULT_CH
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 # Mark ticket as seen/dismissed
 @app.post("/admin/ticket/mark_seen")
 def mark_ticket_seen(conv_id: int, action: str = 'dismissed'):
