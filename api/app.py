@@ -248,9 +248,13 @@ async def enrich_from_database(limit: int = 20):
             if extra.get("intent") == "incomplete_ticket":
                 bucket = "low"
             
-            # Save
+            # Save (UPDATE existing or INSERT new)
             try:
-                cached = HsEnrichment(conv_id=conv.id)
+                cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == conv.id).first()
+                if not cached:
+                    cached = HsEnrichment(conv_id=conv.id)
+                    s.add(cached)
+                
                 cached.content_hash = hashlib.sha256(raw.encode('utf-8')).hexdigest()
                 cached.summary = extra.get('summary')
                 cached.tags = ','.join(extra.get('tags', []))
@@ -258,7 +262,6 @@ async def enrich_from_database(limit: int = 20):
                 cached.root_cause = extra.get('root_cause')
                 cached.severity_bucket = bucket
                 cached.last_enriched_at = datetime.utcnow()
-                s.add(cached)
                 s.commit()
                 enriched_count += 1
                 print(f"✅ Enriched #{conv.number}: {extra.get('intent')} - {extra.get('summary')}")
@@ -575,11 +578,12 @@ async def process_webhook_event(conv_id: int):
                 if extra.get("intent") == "incomplete_ticket":
                     bucket = "low"
                 
-                # Save to cache
+                # Save to cache (UPSERT - update if exists, insert if new)
                 try:
                     if not cached:
                         cached = HsEnrichment(conv_id=conv_id)
                         s.add(cached)
+                    
                     cached.content_hash = content_hash
                     cached.summary = extra.get('summary')
                     cached.tags = ','.join(extra.get('tags', []))
