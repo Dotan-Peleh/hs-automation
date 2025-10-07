@@ -191,6 +191,88 @@ async def system_status():
         "status": "operational"
     }
 
+@app.post("/admin/enrich-from-db")
+async def enrich_from_database(limit: int = 20):
+    """Enrich tickets directly from database (no Help Scout fetch needed)"""
+    import hashlib
+    with get_session() as s:
+        # Get tickets without enrichment
+        all_tickets = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).all()
+        unenriched = []
+        for t in all_tickets:
+            cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == t.id).first()
+            if not cached or not getattr(cached, 'intent', None):
+                unenriched.append(t)
+                if len(unenriched) >= limit:
+                    break
+        
+        enriched_count = 0
+        for conv in unenriched:
+            raw = ((conv.subject or "") + "\n" + (conv.last_text or "")).strip()
+            if not raw or len(raw) < 20:
+                continue
+            
+            # Get user corrections
+            corrections = s.query(TicketFeedback).filter(
+                TicketFeedback.action_type == 'tag_correction'
+            ).order_by(TicketFeedback.created_at.desc()).limit(5).all()
+            
+            user_corrections = []
+            for corr in corrections:
+                try:
+                    import json
+                    feedback = json.loads(corr.feedback_data or '{}')
+                    orig = s.query(HsConversation).get(corr.conversation_id)
+                    if orig and feedback.get('correct_intent'):
+                        user_corrections.append({
+                            "text": ((orig.subject or "") + "\n" + (orig.last_text or "")).strip(),
+                            "correct_intent": feedback.get('correct_intent'),
+                            "correct_severity": feedback.get('correct_severity'),
+                            "notes": feedback.get('notes')
+                        })
+                except:
+                    pass
+            
+            # Enrich
+            extra = llm.enrich(raw, user_corrections=user_corrections) if llm.is_enabled() else {}
+            if not extra or not extra.get('intent'):
+                continue
+            
+            # Compute severity
+            entities = classify.extract_entities(raw)
+            cats, rule_score = classify.categorize(raw)
+            sev_score = severity.compute(raw, entities, rule_score)
+            bucket = severity.bucketize(sev_score, 0, 0)
+            if not bucket:
+                bucket = "high" if sev_score >= 50 else ("medium" if sev_score >= 30 else "low")
+            if extra.get("intent") == "incomplete_ticket":
+                bucket = "low"
+            
+            # Save
+            try:
+                cached = HsEnrichment(conv_id=conv.id)
+                cached.content_hash = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+                cached.summary = extra.get('summary')
+                cached.tags = ','.join(extra.get('tags', []))
+                cached.intent = extra.get('intent')
+                cached.root_cause = extra.get('root_cause')
+                cached.severity_bucket = bucket
+                cached.last_enriched_at = datetime.utcnow()
+                s.add(cached)
+                s.commit()
+                enriched_count += 1
+                print(f"✅ Enriched #{conv.number}: {extra.get('intent')} - {extra.get('summary')}")
+            except Exception as e:
+                s.rollback()
+                print(f"❌ Failed #{conv.number}: {e}")
+        
+        return {
+            "ok": True,
+            "enriched": enriched_count,
+            "total_unenriched": len(unenriched),
+            "message": f"Enriched {enriched_count}/{len(unenriched)} tickets from database"
+        }
+
 # Mark ticket as seen/dismissed
 @app.post("/admin/ticket/mark_seen")
 def mark_ticket_seen(conv_id: int, action: str = 'dismissed'):
