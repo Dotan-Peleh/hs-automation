@@ -403,6 +403,112 @@ async def process_webhook_event(conv_id: int):
             # Upsert with correct arguments (including customer info)
             upsert_hs_conversation(s, conv_id, number, subject, last_text, tags_str, updated_at_dt, customer_name, first_name, last_name, user_id)
             
+            # ENRICH NEW TICKETS (with learning from your corrections!)
+            raw = ((subject or "") + "\n" + (last_text or "")).strip()
+            content_hash = None
+            try:
+                import hashlib
+                content_hash = hashlib.sha256(raw.encode('utf-8')).hexdigest()
+            except Exception:
+                pass
+            
+            # Check if already enriched
+            cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == conv_id).first()
+            
+            should_enrich = False
+            if not cached:
+                should_enrich = True
+                print(f"🆕 NEW TICKET #{number} - will enrich")
+            elif content_hash and getattr(cached, 'content_hash', None) != content_hash:
+                should_enrich = True
+                print(f"🔄 Content changed for #{number} - will re-enrich")
+            else:
+                print(f"💰 Skip enrichment for #{number} - already done")
+            
+            if should_enrich:
+                # Fetch YOUR recent corrections (few-shot learning!)
+                user_corrections = []
+                try:
+                    corrections = s.query(TicketFeedback).filter(
+                        TicketFeedback.action_type == 'tag_correction'
+                    ).order_by(TicketFeedback.created_at.desc()).limit(5).all()
+                    
+                    for corr in corrections:
+                        try:
+                            import json
+                            feedback = json.loads(corr.feedback_data) if corr.feedback_data else {}
+                            orig_conv = s.query(HsConversation).get(corr.conversation_id)
+                            if orig_conv and feedback.get('correct_intent'):
+                                user_corrections.append({
+                                    "text": ((orig_conv.subject or "") + "\n" + (orig_conv.last_text or "")).strip(),
+                                    "correct_intent": feedback.get('correct_intent'),
+                                    "correct_severity": feedback.get('correct_severity'),
+                                    "notes": feedback.get('notes')
+                                })
+                        except:
+                            continue
+                except Exception:
+                    pass
+                
+                # Call LLM with your corrections as examples!
+                extra = llm.enrich(raw, user_corrections=user_corrections) if llm.is_enabled() and raw else {}
+                
+                # Compute severity
+                entities = classify.extract_entities(raw)
+                cats, rule_score = classify.categorize(raw)
+                sev_score = severity.compute(raw, entities, rule_score)
+                bucket = severity.bucketize(sev_score, 0, 0)
+                if not bucket:
+                    if sev_score >= 50:
+                        bucket = "high"
+                    elif sev_score >= 30:
+                        bucket = "medium"
+                    else:
+                        bucket = "low"
+                
+                # Force empty tickets to LOW
+                if extra.get("intent") == "incomplete_ticket":
+                    bucket = "low"
+                
+                # Save to cache
+                try:
+                    if not cached:
+                        cached = HsEnrichment(conv_id=conv_id)
+                        s.add(cached)
+                    cached.content_hash = content_hash
+                    cached.summary = extra.get('summary')
+                    cached.tags = ','.join(extra.get('tags', []))
+                    cached.intent = extra.get('intent')
+                    cached.root_cause = extra.get('root_cause')
+                    cached.severity_bucket = bucket
+                    cached.last_enriched_at = datetime.utcnow()
+                    s.commit()
+                    print(f"💾 Saved enrichment for #{number}")
+                except Exception as e:
+                    print(f"❌ Failed to save: {e}")
+                    s.rollback()
+                
+                # Send Slack alert for high/medium/critical/delete_account
+                intent_val = extra.get("intent", "").lower()
+                if (bucket and bucket.lower() in ["high", "medium", "critical"]) or intent_val == "delete_account":
+                    print(f"📢 Sending Slack alert for {bucket if bucket else 'delete_account'} #{number}")
+                    slack_tags = extra.get("tags", []).copy() if extra.get("tags") else []
+                    if intent_val == "delete_account":
+                        slack_tags.append("🚨 DELETE_REQUEST")
+                    
+                    slack.send_ticket_alert(
+                        ticket_number=number,
+                        subject=subject or "No subject",
+                        severity=bucket or "low",
+                        intent=extra.get("intent", "unknown"),
+                        root_cause=extra.get("root_cause", ""),
+                        summary=extra.get("summary", "No summary"),
+                        tags=slack_tags,
+                        hs_link=f"https://secure.helpscout.net/conversation/{conv_id}",
+                        customer_name=customer_name,
+                        game_user_id=user_id
+                    )
+            
             # Publish event for real-time dashboard updates
             print(f"📡 Publishing SSE event for conv_id {conv_id}, number {number}")
             _publish_event({

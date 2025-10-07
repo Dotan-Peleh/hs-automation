@@ -43,18 +43,39 @@ def is_enabled() -> bool:
     return False
 
 
-def enrich(text: str) -> dict:
+def enrich(text: str, user_corrections: list = None) -> dict:
+    """
+    Enrich ticket with LLM, using user corrections as few-shot examples.
+    
+    Args:
+        text: Ticket text to analyze
+        user_corrections: Recent user corrections to guide the LLM
+    """
     if not is_enabled() or not text:
         return {}
     
+    # Build enhanced system prompt with user corrections (few-shot learning)
+    enhanced_system = SYSTEM
+    if user_corrections and len(user_corrections) > 0:
+        examples = "\n\n🎓 LEARN FROM THESE USER CORRECTIONS:\n"
+        for i, corr in enumerate(user_corrections[:3], 1):  # Use 3 most recent
+            examples += f"\nExample {i} - User's Correction:\n"
+            examples += f"Ticket text: {corr.get('text', '')[:150]}...\n"
+            examples += f"✓ Correct intent: {corr.get('correct_intent')}\n"
+            examples += f"✓ Correct severity: {corr.get('correct_severity')}\n"
+            if corr.get('notes'):
+                examples += f"Why: {corr.get('notes')}\n"
+        enhanced_system = SYSTEM + examples
+        print(f"📚 Using {len(user_corrections)} user corrections as learning examples")
+    
     clean_text_for_log = text[:150].replace('\n', ' ')
-    print(f"🧠 Calling LLM to enrich ticket content (first 150 chars): '{clean_text_for_log}...'")
+    print(f"🧠 Calling LLM with user guidance (first 150 chars): '{clean_text_for_log}...'")
     
     try:
         payload = {
             "model": ANTHROPIC_MODEL,
             "max_tokens": 400,
-            "system": SYSTEM,
+            "system": enhanced_system,  # Enhanced with your corrections!
             "messages": [{"role": "user", "content": text[:6000]}]
         }
         r = requests.post(API_URL, headers=HEADERS, data=json.dumps(payload), timeout=20)
