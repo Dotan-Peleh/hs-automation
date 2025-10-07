@@ -43,6 +43,68 @@ def post_update(incident, cats, entities, z, cus):
     requests.post("https://slack.com/api/chat.postMessage", headers=_headers(),
                   data=json.dumps({"channel": incident.slack_channel_id or DEFAULT_CH, "thread_ts": incident.slack_thread_ts, "text": txt}))
 
+def send_ticket_alert(ticket_number, subject, severity, intent, root_cause, summary, tags, hs_link, customer_name=None, game_user_id=None):
+    """Send Slack notification for support tickets"""
+    if not BOT or not DEFAULT_CH:
+        print("⚠️ Slack not configured")
+        return False
+    
+    # Build message
+    severity_emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(severity.lower(), "⚪")
+    
+    intent_labels = {
+        "crash_report": "🔥 App Crash",
+        "bug_report": "🐛 Bug",
+        "billing_issue": "💳 Billing",
+        "delete_account": "🚨 DELETE ACCOUNT",
+        "lost_progress": "💾 Progress Lost",
+        "incomplete_ticket": "📭 Empty",
+        "feedback": "💬 Feedback"
+    }
+    intent_label = intent_labels.get(intent, intent or "Support")
+    
+    title = f"🚨 DELETE ACCOUNT REQUEST: #{ticket_number}" if intent == "delete_account" else f"{severity_emoji} {severity.upper()}: #{ticket_number}"
+    
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": title}},
+        {"type": "section", "fields": [
+            {"type": "mrkdwn", "text": f"*Subject:* {subject[:100]}"},
+            {"type": "mrkdwn", "text": f"*Intent:* {intent_label}"},
+            {"type": "mrkdwn", "text": f"*Severity:* {severity.upper()}"},
+            {"type": "mrkdwn", "text": f"*Root Cause:* {root_cause[:100] if root_cause else 'N/A'}"},
+        ]},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*Summary:* {summary[:200]}"}}
+    ]
+    
+    if customer_name or game_user_id:
+        fields = []
+        if customer_name:
+            fields.append({"type": "mrkdwn", "text": f"*Customer:* {customer_name}"})
+        if game_user_id:
+            fields.append({"type": "mrkdwn", "text": f"*UserID:* `{game_user_id}`"})
+        blocks.append({"type": "section", "fields": fields})
+    
+    if tags:
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"🏷️ {', '.join(tags[:8])}"}]})
+    
+    blocks.append({"type": "actions", "elements": [
+        {"type": "button", "text": {"type": "plain_text", "text": "Open in Help Scout"}, "url": hs_link, "style": "primary"}
+    ]})
+    
+    try:
+        resp = requests.post("https://slack.com/api/chat.postMessage", headers=_headers(),
+            data=json.dumps({"channel": DEFAULT_CH, "text": f"{severity_emoji} {severity.upper()}: #{ticket_number} - {subject}", "blocks": blocks}), timeout=10)
+        data = resp.json()
+        if data.get("ok"):
+            print(f"✅ Sent Slack alert for #{ticket_number}")
+            return True
+        else:
+            print(f"❌ Slack error: {data}")
+            return False
+    except Exception as e:
+        print(f"❌ Slack failed: {e}")
+        return False
+
 async def verify_and_parse_interaction(req: Request):
     if not SIGNING_SECRET:
         raise HTTPException(status_code=501, detail="Slack interactivity not configured")
