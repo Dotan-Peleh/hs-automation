@@ -29,7 +29,8 @@ SYSTEM = (
     "IMPORTANT DISTINCTIONS:\n"
     '- Use root_cause "game crashing on launch" for app crashes (app closes/stops working)\n'
     '- Use root_cause "gameplay bug/glitch" for bugs that don\'t crash the app (items missing, wrong behavior, etc.)\n'
-    '- Use root_cause "app freezing/stuck" for UI freezes (app doesn\'t crash but stops responding)\n\n'
+    '- Use root_cause "app freezing/stuck" for UI freezes (app doesn\'t crash but stops responding)\n'
+    '- If a ticket contains ONLY structured data (like UserID, OS, Device) and NO actual message from the user, use intent "incomplete_ticket". DO NOT invent a problem.\n\n'
     "Valid intent values:\n"
     "- bug_report: for bugs/glitches that don't crash the app\n"
     "- crash_report: for app crashes/force closes\n"
@@ -38,6 +39,7 @@ SYSTEM = (
     "- lost_progress: save data lost\n"
     "- feedback: general feedback/compliments\n"
     "- question: how-to questions\n"
+    "- incomplete_ticket: for empty messages or tickets with only structured data (UserID, OS, etc.)\n"
     "- unreadable: for messages that are incomprehensible, gibberish, or cannot be understood\n\n"
     "Output ONLY the JSON object. No other text."
 )
