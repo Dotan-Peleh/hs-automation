@@ -211,8 +211,12 @@ async def enrich_from_database(limit: int = 20):
                 not cached or 
                 not intent or 
                 intent == '' or
-                not summary or
+                intent == 'None' or  # String "None" from bad data
+                str(intent).lower() == 'none' or
+                not summary or 
                 summary == '' or
+                summary == 'None' or  # String "None" from bad data
+                summary == 'Support Request' or  # Default fallback = not enriched
                 len(str(summary)) < 10  # Summary too short = not really enriched
             )
             
