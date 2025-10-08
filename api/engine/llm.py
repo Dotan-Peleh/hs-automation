@@ -20,6 +20,12 @@ SYSTEM = (
     '  "tags": ["keyword1", "keyword2", "keyword3"],\n'
     '  "summary": "One sentence under 15 words describing the specific user problem"\n'
     "}\n\n"
+    "SUMMARY RULES - USE USER'S ACTUAL WORDS:\n"
+    "1. Extract what the user ACTUALLY wrote, not the subject line\n"
+    "2. Beta feedback emails: Ignore subject, extract the real feedback message\n"
+    "3. Example: Subject 'A user has written new beta feedback...' + Body 'good game' → summary: 'good game'\n"
+    "4. Quote user's exact words when short and clear\n"
+    "5. For complaints/issues: Extract the specific problem they describe\n\n"
     "IMPORTANT DISTINCTIONS:\n"
     '- Use root_cause "game crashing on launch" for app crashes (app closes/stops working)\n'
     '- Use root_cause "gameplay bug/glitch" for bugs that don\'t crash the app (items missing, wrong behavior, etc.)\n'
