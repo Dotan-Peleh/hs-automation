@@ -295,6 +295,8 @@ async def enrich_from_database(limit: int = 20, debug: bool = False):
                 bucket = "high" if sev_score >= 50 else ("medium" if sev_score >= 30 else "low")
             if extra.get("intent") == "incomplete_ticket":
                 bucket = "low"
+            if extra.get("intent") == "unreadable":
+                bucket = "low"
             
             # Save (UPDATE existing or INSERT new)
             try:
@@ -696,6 +698,8 @@ async def process_webhook_event(conv_id: int):
                         slack_tags.append("🚨 DELETE_REQUEST")
                     elif intent_val == "incomplete_ticket":
                         slack_tags.append("📭 EMPTY_TICKET")
+                    elif intent_val == "unreadable":
+                        slack_tags.append("❓ UNREADABLE")
                     
                     slack.send_ticket_alert(
                         ticket_number=number,

@@ -37,7 +37,8 @@ SYSTEM = (
     "- cancel_subscription: user wants to cancel/stop subscription\n"
     "- lost_progress: save data lost\n"
     "- feedback: general feedback/compliments\n"
-    "- question: how-to questions\n\n"
+    "- question: how-to questions\n"
+    "- unreadable: for messages that are incomprehensible, gibberish, or cannot be understood\n\n"
     "Output ONLY the JSON object. No other text."
 )
 
