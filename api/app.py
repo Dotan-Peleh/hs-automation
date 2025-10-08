@@ -554,12 +554,15 @@ async def process_webhook_event(conv_id: int):
             should_enrich = False
             if not cached:
                 should_enrich = True
-                print(f"🆕 NEW TICKET #{number} - will enrich")
+                print(f"🆕 NEW TICKET #{number} - MUST enrich (no cache)")
+            elif not getattr(cached, 'intent', None):
+                should_enrich = True
+                print(f"🔄 INCOMPLETE CACHE for #{number} - MUST enrich (missing intent)")
             elif content_hash and getattr(cached, 'content_hash', None) != content_hash:
                 should_enrich = True
                 print(f"🔄 Content changed for #{number} - will re-enrich")
             else:
-                print(f"💰 Skip enrichment for #{number} - already done")
+                print(f"✅ Already enriched #{number} - using cache")
             
             if should_enrich:
                 # Fetch YOUR recent corrections (few-shot learning!)
@@ -625,10 +628,11 @@ async def process_webhook_event(conv_id: int):
                     print(f"❌ Failed to save: {e}")
                     s.rollback()
                 
-                # Send Slack alert for high/medium/critical/delete_account
-                intent_val = extra.get("intent", "").lower()
-                if (bucket and bucket.lower() in ["high", "medium", "critical"]) or intent_val == "delete_account":
-                    print(f"📢 Sending Slack alert for {bucket if bucket else 'delete_account'} #{number}")
+                # Send Slack alert for ALL tickets (as requested)
+                if extra.get("intent"):  # Only if enrichment succeeded
+                    intent_val = extra.get("intent", "").lower()
+                    print(f"📢 Sending Slack alert for ALL tickets - #{number}: {bucket} severity")
+                    
                     slack_tags = extra.get("tags", []).copy() if extra.get("tags") else []
                     if intent_val == "delete_account":
                         slack_tags.append("🚨 DELETE_REQUEST")
