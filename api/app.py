@@ -52,15 +52,56 @@ except Exception as e:
 app = FastAPI(title="HS Trends", version="3.0")  # Clean rebuild with working enrichment
 
 # CRITICAL: CORS must be configured FIRST before any other middleware
-# This allows all origins to prevent CORS blocking
+# Allow requests from Vercel deployments and localhost
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001", 
+    "https://*.vercel.app",
+    "https://hs-automation-9fw30d31m-dotan-s-projects.vercel.app",
+]
+
+# Also allow all origins with wildcard for maximum compatibility
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins
-    allow_credentials=True,
+    allow_credentials=False,  # Must be False when allow_origins is "*"
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],  # Expose all headers in response
 )
+
+# Add exception handler to ensure CORS headers on errors
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": str(exc.detail)},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    from fastapi.responses import JSONResponse
+    import traceback
+    print(f"❌ Unhandled exception: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 # --- Very lightweight in‑process pubsub for real‑time notifications (dev only) ---
 import asyncio
