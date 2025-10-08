@@ -1369,26 +1369,27 @@ def insights(
         except Exception:
             pass
 
+        # ALWAYS read from cache if exists (trust the cache!)
         cached = None
-        if content_hash:
-            try:
-                cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id).first()
-            except Exception:
-                cached = None
+        try:
+            cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id).first()
+        except Exception:
+            pass
         
-        # Use cache ONLY if content unchanged AND has complete data (including root_cause)
-        has_root_cause = getattr(cached, 'root_cause', None) and len(str(getattr(cached, 'root_cause', ''))) > 3
-        if cached and getattr(cached, 'content_hash', None) == content_hash and has_root_cause:
-            # Content unchanged and cache is complete, use it
-            print(f"✅ Using cached enrichment for #{c.number} (content_hash match)")
+        if cached:
+            # Use cached data regardless of content_hash
             extra = {
                 "summary": getattr(cached, 'summary', None),
                 "intent": getattr(cached, 'intent', None),
                 "root_cause": getattr(cached, 'root_cause', None),
                 "tags": (getattr(cached, 'tags', '') or '').split(',') if getattr(cached, 'tags', '') else [],
             }
+            # Use cached severity
+            cached_sev = getattr(cached, 'severity_bucket', None)
+            if cached_sev and str(cached_sev) not in ('None', 'none', ''):
+                bucket = cached_sev
         else:
-            # No cache - webhook hasn't enriched this yet
+            # No cache
             extra = {}
         
         # --- Build final ticket object ---
