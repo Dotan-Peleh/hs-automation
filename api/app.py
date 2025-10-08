@@ -196,13 +196,29 @@ async def enrich_from_database(limit: int = 20):
     """Enrich tickets directly from database (no Help Scout fetch needed)"""
     import hashlib
     with get_session() as s:
-        # Get tickets without enrichment
+        # Get tickets without enrichment or with empty/incomplete enrichment
         all_tickets = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).all()
         unenriched = []
         for t in all_tickets:
             cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == t.id).first()
-            if not cached or not getattr(cached, 'intent', None):
+            # Ticket needs enrichment if:
+            # 1. No cache exists
+            # 2. Cache exists but missing critical fields (intent, summary, root_cause)
+            intent = getattr(cached, 'intent', None) if cached else None
+            summary = getattr(cached, 'summary', None) if cached else None
+            
+            needs_enrichment = (
+                not cached or 
+                not intent or 
+                intent == '' or
+                not summary or
+                summary == '' or
+                len(str(summary)) < 10  # Summary too short = not really enriched
+            )
+            
+            if needs_enrichment:
                 unenriched.append(t)
+                print(f"🔍 Found unenriched ticket: #{t.number} (intent={intent}, summary_len={len(str(summary or ''))})")
                 if len(unenriched) >= limit:
                     break
         
