@@ -45,7 +45,11 @@ This repo contains a FastAPI backend and a Next.js dashboard that ingest Help S
 ### 3) LLM Enrichment (Claude)
 - File: `api/engine/llm.py` (already wired into endpoints).
 - Enable by setting `ANTHROPIC_API_KEY` before starting the API.
-- Used to generate concise per-message summaries and extra categories; never writes back to Help Scout.
+- Used to generate concise per-message summaries and extra categories; never writes back to Help Scout.
+- **Special Intent Handling**:
+  - `incomplete_ticket`: Detects empty tickets (no real user message) → forced to LOW severity
+  - `unreadable`: Detects incomprehensible/gibberish messages → forced to LOW severity
+  - `delete_account`: Account deletion requests → Slack alert with 🚨 DELETE_REQUEST tag
 
 ### 4) Vector DB (Pinecone) – Optional
 - Embeddings via OpenAI: `OPENAI_API_KEY` and model `text-embedding-3-small` by default.
@@ -73,7 +77,17 @@ Embeddings are not stored in SQL; they live in Pinecone.
   - crash => high (consistent)
   - progress_lost => high
   - payment => at least medium
+  - **incomplete_ticket** (empty tickets) => **low** (forced override)
+  - **unreadable** (gibberish/incomprehensible) => **low** (forced override)
   - otherwise: low/medium/high from score/z-signal
+
+## Slack alerts
+- Alerts are sent for new tickets **only if the agent hasn't replied yet** (prevents spam).
+- Special intent tags in Slack:
+  - 🚨 **DELETE_REQUEST**: Account deletion requests (high priority)
+  - 📭 **EMPTY_TICKET**: No real user message provided (low severity)
+  - ❓ **UNREADABLE**: Incomprehensible/gibberish content (low severity)
+- Configure via: `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_DEFAULT_CHANNEL_ID`
 
 ## Endpoints – quick reference
 - Health: `GET /healthz`

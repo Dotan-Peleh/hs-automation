@@ -18,6 +18,10 @@
    HS_CLIENT_SECRET=your_helpscout_client_secret
    HS_WEBHOOK_SECRET=your_webhook_secret
    HS_API_TOKEN=your_api_token (if using PAT)
+   ANTHROPIC_API_KEY=your_claude_api_key (for LLM enrichment)
+   SLACK_BOT_TOKEN=your_slack_bot_token (for alerts)
+   SLACK_SIGNING_SECRET=your_slack_signing_secret
+   SLACK_DEFAULT_CHANNEL_ID=your_channel_id
    ```
 
 6. **Copy your API URL**: `https://hs-trends-api.onrender.com`
