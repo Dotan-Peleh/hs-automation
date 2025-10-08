@@ -191,6 +191,24 @@ async def system_status():
         "status": "operational"
     }
 
+@app.delete("/admin/clear-ticket-cache")
+async def clear_ticket_cache(ticket_number: int):
+    """Clear enrichment cache for a specific ticket"""
+    with get_session() as s:
+        # Find ticket by number
+        conv = s.query(HsConversation).filter(HsConversation.number == ticket_number).first()
+        if not conv:
+            return {"ok": False, "error": f"Ticket #{ticket_number} not found"}
+        
+        # Delete cached enrichment
+        cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == conv.id).first()
+        if cached:
+            s.delete(cached)
+            s.commit()
+            return {"ok": True, "message": f"✅ Cleared cache for ticket #{ticket_number}. Run enrich-from-db to re-analyze."}
+        else:
+            return {"ok": False, "message": f"Ticket #{ticket_number} has no cache to clear"}
+
 @app.post("/admin/enrich-from-db")
 async def enrich_from_database(limit: int = 20, debug: bool = False):
     """Enrich tickets directly from database (no Help Scout fetch needed)"""
