@@ -658,10 +658,11 @@ async def process_webhook_event(conv_id: int):
                     print(f"❌ Failed to save: {e}")
                     s.rollback()
                 
-                # Send Slack alert for ALL tickets (as requested)
-                if extra.get("intent"):  # Only if enrichment succeeded
+                # Send Slack alert ONLY if agent hasn't replied yet
+                # (Don't spam Slack with tickets agents already handled)
+                if extra.get("intent") and not agent_replied:
                     intent_val = extra.get("intent", "").lower()
-                    print(f"📢 Sending Slack alert for ALL tickets - #{number}: {bucket} severity")
+                    print(f"📢 Sending Slack alert for #{number}: {bucket} severity (agent hasn't replied yet)")
                     
                     slack_tags = extra.get("tags", []).copy() if extra.get("tags") else []
                     if intent_val == "delete_account":
@@ -679,6 +680,8 @@ async def process_webhook_event(conv_id: int):
                         customer_name=customer_name,
                         game_user_id=user_id
                     )
+                elif agent_replied:
+                    print(f"⏭️ Skip Slack alert for #{number} - agent already replied")
             
             # Publish event for real-time dashboard updates
             print(f"📡 Publishing SSE event for conv_id {conv_id}, number {number}")
