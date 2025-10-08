@@ -197,8 +197,11 @@ async def enrich_from_database(limit: int = 20, debug: bool = False):
     import hashlib
     with get_session() as s:
         # Get tickets without enrichment or with empty/incomplete enrichment
-        all_tickets = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).limit(min(limit * 3, 100)).all()
+        # Check ALL recent tickets, not just first N
+        all_tickets = s.query(HsConversation).order_by(HsConversation.number.desc()).limit(100).all()
         unenriched = []
+        
+        print(f"🔍 Scanning {len(all_tickets)} recent tickets for missing enrichment...")
         
         for t in all_tickets:
             cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == t.id).first()
