@@ -192,37 +192,44 @@ async def system_status():
     }
 
 @app.post("/admin/enrich-from-db")
-async def enrich_from_database(limit: int = 20):
+async def enrich_from_database(limit: int = 20, debug: bool = False):
     """Enrich tickets directly from database (no Help Scout fetch needed)"""
     import hashlib
     with get_session() as s:
         # Get tickets without enrichment or with empty/incomplete enrichment
-        all_tickets = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).all()
+        all_tickets = s.query(HsConversation).order_by(HsConversation.updated_at.desc()).limit(min(limit * 3, 100)).all()
         unenriched = []
+        
         for t in all_tickets:
             cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == t.id).first()
-            # Ticket needs enrichment if:
-            # 1. No cache exists
-            # 2. Cache exists but missing critical fields (intent, summary, root_cause)
+            
+            # Get actual values
             intent = getattr(cached, 'intent', None) if cached else None
             summary = getattr(cached, 'summary', None) if cached else None
+            root_cause = getattr(cached, 'root_cause', None) if cached else None
             
+            # DEBUG: Print first 10 to see what's in DB
+            if debug and len(unenriched) < 10:
+                print(f"DEBUG #{t.number}: cached={bool(cached)}, intent={repr(intent)}, summary={repr(summary)[:50]}")
+            
+            # Ticket needs enrichment if ANY of these are true:
             needs_enrichment = (
-                not cached or 
-                not intent or 
-                intent == '' or
-                intent == 'None' or  # String "None" from bad data
-                str(intent).lower() == 'none' or
-                not summary or 
-                summary == '' or
-                summary == 'None' or  # String "None" from bad data
-                summary == 'Support Request' or  # Default fallback = not enriched
-                len(str(summary)) < 10  # Summary too short = not really enriched
+                not cached or  # No cache at all
+                not intent or  # intent is None/null
+                str(intent).strip() == '' or  # Empty string
+                str(intent).lower() == 'none' or  # String "none" or "None"
+                not summary or  # summary is None/null
+                str(summary).strip() == '' or  # Empty string
+                str(summary).lower() == 'none' or  # String "none"
+                summary == 'Support Request' or  # Default fallback
+                summary == 'No description available' or  # Another fallback
+                len(str(summary).strip()) < 10  # Too short
             )
             
             if needs_enrichment:
                 unenriched.append(t)
-                print(f"🔍 Found unenriched ticket: #{t.number} (intent={intent}, summary_len={len(str(summary or ''))})")
+                if len(unenriched) <= 5:  # Log first 5
+                    print(f"🔍 Needs enrichment: #{t.number} - intent={repr(intent)}, summary={repr(summary)[:50]}")
                 if len(unenriched) >= limit:
                     break
         
