@@ -60,6 +60,34 @@ def enrich(text: str, user_corrections: list = None) -> dict:
     if not is_enabled() or not text:
         return {}
     
+    # PRE-CHECK: AGGRESSIVE empty ticket detection to prevent hallucinations!
+    import re
+    original_len = len(text)
+    cleaned = text
+    
+    # Remove ALL template patterns
+    cleaned = re.sub(r'(?i)user\s*id\s*[=:]\s*[a-f0-9\-]+', '', cleaned)
+    cleaned = re.sub(r'(?i)os\s*[=:]\s*[\w\s]+', '', cleaned)
+    cleaned = re.sub(r'(?i)device\s*[=:]\s*[\w\s\-\(\)]+', '', cleaned)
+    cleaned = re.sub(r'(?i)platform\s*[=:]\s*[\w\s]+', '', cleaned)
+    cleaned = re.sub(r'<[^>]+>', '', cleaned)  # Remove ALL HTML
+    cleaned = re.sub(r'Support Request', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\[PeerPlay Games\]', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'---+', '', cleaned)
+    cleaned = re.sub(r'=+', '', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    # STRICT: If less than 40 chars of real content, it's EMPTY
+    if len(cleaned) < 40:
+        print(f"🚫 EMPTY TICKET BLOCKED - Only {len(cleaned)} chars after removing template (original: {original_len})")
+        print(f"   Cleaned text: '{cleaned[:100]}'")
+        return {
+            "summary": "Empty ticket - no user message provided",
+            "root_cause": "no user message provided",
+            "intent": "incomplete_ticket",
+            "tags": ["empty", "no_message"],
+        }
+    
     # Build enhanced system prompt with user corrections (few-shot learning)
     enhanced_system = SYSTEM
     if user_corrections and len(user_corrections) > 0:
