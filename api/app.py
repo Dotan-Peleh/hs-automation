@@ -657,6 +657,10 @@ async def process_webhook_event(conv_id: int):
                 if extra.get("intent") == "incomplete_ticket":
                     bucket = "low"
                 
+                # Force unreadable/incomprehensible tickets to LOW
+                if extra.get("intent") == "unreadable":
+                    bucket = "low"
+                
                 # Save to cache (UPSERT - update if exists, insert if new)
                 try:
                     if not cached:
@@ -676,15 +680,22 @@ async def process_webhook_event(conv_id: int):
                     print(f"❌ Failed to save: {e}")
                     s.rollback()
                 
-                # Send Slack alert ONLY if agent hasn't replied yet
-                # (Don't spam Slack with tickets agents already handled)
+                # Send Slack alert for ALL tickets (including empty ones!)
+                # But SKIP if agent already replied (no spam for handled tickets)
                 if extra.get("intent") and not agent_replied:
                     intent_val = extra.get("intent", "").lower()
-                    print(f"📢 Sending Slack alert for #{number}: {bucket} severity (agent hasn't replied yet)")
+                    
+                    # Special message for empty tickets
+                    if intent_val == "incomplete_ticket":
+                        print(f"📢 Sending Slack alert for EMPTY ticket #{number} - severity: LOW")
+                    else:
+                        print(f"📢 Sending Slack alert for #{number}: {bucket} severity")
                     
                     slack_tags = extra.get("tags", []).copy() if extra.get("tags") else []
                     if intent_val == "delete_account":
                         slack_tags.append("🚨 DELETE_REQUEST")
+                    elif intent_val == "incomplete_ticket":
+                        slack_tags.append("📭 EMPTY_TICKET")
                     
                     slack.send_ticket_alert(
                         ticket_number=number,
