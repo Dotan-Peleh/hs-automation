@@ -27,11 +27,29 @@ def extract_entities(text: str) -> dict:
     chapter = re.search(r"\bchapter\s*(\d{1,4})\b", t)
     platform = "android" if re.search(r"\bandroid\b", t) else ("ios" if re.search(r"\bios\b|\biphone|\bipad", t) else None)
     app_version = re.search(r"\bv?(\d+\.\d+(?:\.\d+)*)\b", t)
+    
+    # Extract device information
+    device = None
+    device_match = re.search(r"(?i)device\s*[=:]\s*([^\n\r]+?)(?:\n|\r|$)", text)
+    if device_match:
+        device = device_match.group(1).strip()
+    else:
+        # Try to find specific device names
+        if re.search(r"\biphone\s*(\d+(?:\s*(?:pro|plus|mini|max))?)", t):
+            device_match = re.search(r"\biphone\s*(\d+(?:\s*(?:pro|plus|mini|max))?)", t)
+            device = "iPhone " + device_match.group(1)
+        elif re.search(r"\bipad", t):
+            device = "iPad"
+        elif re.search(r"\b(samsung|xiaomi|pixel|huawei|oneplus|oppo|vivo)\b", t):
+            device_brand = re.search(r"\b(samsung|xiaomi|pixel|huawei|oneplus|oppo|vivo)\b", t)
+            device = device_brand.group(1).capitalize()
+    
     return {
         "level": int(level.group(1)) if level else None,
         "chapter": int(chapter.group(1)) if chapter else None,
         "platform": platform,
-        "app_version": app_version.group(1) if app_version else None
+        "app_version": app_version.group(1) if app_version else None,
+        "device": device
     }
 
 def categorize(text: str):

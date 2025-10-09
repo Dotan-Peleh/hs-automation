@@ -43,7 +43,8 @@ def post_update(incident, cats, entities, z, cus):
     requests.post("https://slack.com/api/chat.postMessage", headers=_headers(),
                   data=json.dumps({"channel": incident.slack_channel_id or DEFAULT_CH, "thread_ts": incident.slack_thread_ts, "text": txt}))
 
-def send_ticket_alert(ticket_number, subject, severity, intent, root_cause, summary, tags, hs_link, customer_name=None, game_user_id=None):
+def send_ticket_alert(ticket_number, subject, severity, intent, root_cause, summary, tags, hs_link, 
+                      customer_name=None, game_user_id=None, platform=None, device=None, created_at=None):
     """Send Slack notification for support tickets"""
     if not BOT or not DEFAULT_CH:
         print("⚠️ Slack not configured")
@@ -59,31 +60,49 @@ def send_ticket_alert(ticket_number, subject, severity, intent, root_cause, summ
         "delete_account": "🚨 DELETE ACCOUNT",
         "lost_progress": "💾 Progress Lost",
         "incomplete_ticket": "📭 Empty",
-        "feedback": "💬 Feedback"
+        "feedback": "💬 Feedback",
+        "unreadable": "❓ Unreadable"
     }
-    intent_label = intent_labels.get(intent, intent or "Support")
+    intent_label = intent_labels.get(intent, intent or "Support Ticket")
     
-    title = f"🚨 DELETE ACCOUNT REQUEST: #{ticket_number}" if intent == "delete_account" else f"{severity_emoji} {severity.upper()}: #{ticket_number}"
+    title = f"{intent_label}: #{ticket_number}"
     
+    header_fields = [
+        {"type": "mrkdwn", "text": f"*Severity:*\n{severity_emoji} {severity.upper()}"},
+        {"type": "mrkdwn", "text": f"*Subject:*\n{subject[:100]}"},
+    ]
+
+    if created_at:
+        try:
+            from datetime import datetime
+            dt_obj = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            ts = int(dt_obj.timestamp())
+            header_fields.append({"type": "mrkdwn", "text": f"*Time:*\n<!date^{ts}^{{date_short_pretty}} at {{time}}|{created_at}>"})
+        except Exception:
+            header_fields.append({"type": "mrkdwn", "text": f"*Time:*\n{created_at}"})
+
+
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": title}},
-        {"type": "section", "fields": [
-            {"type": "mrkdwn", "text": f"*Subject:* {subject[:100]}"},
-            {"type": "mrkdwn", "text": f"*Intent:* {intent_label}"},
-            {"type": "mrkdwn", "text": f"*Severity:* {severity.upper()}"},
-            {"type": "mrkdwn", "text": f"*Root Cause:* {root_cause[:100] if root_cause else 'N/A'}"},
-        ]},
+        {"type": "section", "fields": header_fields},
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*Summary:* {summary[:200]}"}}
     ]
     
+    context_fields = []
+    if platform:
+        context_fields.append({"type": "mrkdwn", "text": f"📱 *Platform:* {platform}"})
+    if device:
+        context_fields.append({"type": "mrkdwn", "text": f"💻 *Device:* {device}"})
+
     if customer_name or game_user_id:
-        fields = []
         if customer_name:
-            fields.append({"type": "mrkdwn", "text": f"*Customer:* {customer_name}"})
+            context_fields.append({"type": "mrkdwn", "text": f"👤 *Customer:* {customer_name}"})
         if game_user_id:
-            fields.append({"type": "mrkdwn", "text": f"*UserID:* `{game_user_id}`"})
-        blocks.append({"type": "section", "fields": fields})
+            context_fields.append({"type": "mrkdwn", "text": f"🆔 *UserID:* `{game_user_id}`"})
     
+    if context_fields:
+        blocks.append({"type": "context", "elements": context_fields})
+
     if tags:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"🏷️ {', '.join(tags[:8])}"}]})
     
@@ -93,7 +112,7 @@ def send_ticket_alert(ticket_number, subject, severity, intent, root_cause, summ
     
     try:
         resp = requests.post("https://slack.com/api/chat.postMessage", headers=_headers(),
-            data=json.dumps({"channel": DEFAULT_CH, "text": f"{severity_emoji} {severity.upper()}: #{ticket_number} - {subject}", "blocks": blocks}), timeout=10)
+            data=json.dumps({"channel": DEFAULT_CH, "text": f"{intent_label}: #{ticket_number} - {subject}", "blocks": blocks}), timeout=10)
         data = resp.json()
         if data.get("ok"):
             print(f"✅ Sent Slack alert for #{ticket_number}")

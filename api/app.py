@@ -374,6 +374,7 @@ async def test_slack():
         return {"ok": False, "error": "Slack not configured", "bot": bool(slack.BOT), "channel": bool(slack.DEFAULT_CH)}
     
     try:
+        from datetime import datetime
         result = slack.send_ticket_alert(
             ticket_number=9999,
             subject="🧪 TEST ALERT - Slack Integration Working!",
@@ -384,7 +385,10 @@ async def test_slack():
             tags=["test", "slack", "integration"],
             hs_link="https://secure.helpscout.net/",
             customer_name="Test User",
-            game_user_id="test123456789"
+            game_user_id="test123456789",
+            platform="iOS",
+            device="iPhone 14 Pro",
+            created_at=datetime.utcnow().isoformat() + "Z"
         )
         
         return {
@@ -742,6 +746,13 @@ async def process_webhook_event(conv_id: int):
                     elif intent_val == "unreadable":
                         slack_tags.append("❓ UNREADABLE")
                     
+                    # Extract platform and device from entities
+                    platform_val = entities.get("platform")
+                    device_val = entities.get("device")
+                    
+                    # Get created_at timestamp from conversation
+                    created_at_str = conv.get('createdAt') or conv.get('updatedAt')
+                    
                     slack.send_ticket_alert(
                         ticket_number=number,
                         subject=subject or "No subject",
@@ -752,7 +763,10 @@ async def process_webhook_event(conv_id: int):
                         tags=slack_tags,
                         hs_link=f"https://secure.helpscout.net/conversation/{conv_id}",
                         customer_name=customer_name,
-                        game_user_id=user_id
+                        game_user_id=user_id,
+                        platform=platform_val,
+                        device=device_val,
+                        created_at=created_at_str
                     )
                 elif agent_replied:
                     print(f"⏭️ Skip Slack alert for #{number} - agent already replied")
