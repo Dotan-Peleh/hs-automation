@@ -77,7 +77,7 @@ def send_ticket_alert(ticket_number, subject, severity, intent, root_cause, summ
             from datetime import datetime
             dt_obj = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             ts = int(dt_obj.timestamp())
-            header_fields.append({"type": "mrkdwn", "text": f"*Time:*\n<!date^{ts}^{{date_short_pretty}} at {{time}}|{created_at}>"})
+            header_fields.append({"type": "mrkdwn", "text": f"*Time:*\n<!date^{ts}^{date_short} at {time}|{created_at}>"})
         except Exception:
             header_fields.append({"type": "mrkdwn", "text": f"*Time:*\n{created_at}"})
 
