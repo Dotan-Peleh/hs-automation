@@ -693,6 +693,7 @@ async def process_webhook_event(conv_id: int):
                 sev_score = severity.compute(raw, entities, rule_score)
                 bucket = severity.bucketize(sev_score, 0, 0)
                 if not bucket:
+                    # Fallback to score-based bucketing if anomaly detection doesn't trigger
                     if sev_score >= 50:
                         bucket = "high"
                     elif sev_score >= 30:
@@ -700,7 +701,57 @@ async def process_webhook_event(conv_id: int):
                     else:
                         bucket = "low"
                 
-                # Force empty tickets to LOW
+                # NEW: Granular severity overrides based on intent and root cause
+                intent = extra.get("intent")
+                root_cause = extra.get("root_cause", "").lower()
+                new_bucket = None
+
+                if intent == 'crash_report':
+                    new_bucket = 'high'
+                elif intent == 'billing_issue' or intent == 'missing_purchase_reward':
+                    if any(k in raw.lower() for k in ["charge twice", "double charge"]):
+                        new_bucket = 'high'
+                    elif 'refund' in root_cause:
+                        new_bucket = 'medium'
+                    else:
+                        new_bucket = 'high'  # Default for billing issues
+                elif intent == 'lost_progress':
+                    new_bucket = 'medium'
+                elif 'app freezing/stuck' in root_cause:
+                    new_bucket = 'medium'
+                elif intent == 'bug_report' and 'gameplay' in root_cause:
+                    # Low by default, but check for recent volume
+                    try:
+                        from datetime import datetime, timedelta
+                        two_days_ago = datetime.utcnow() - timedelta(days=2)
+                        recent_complaints = s.query(HsEnrichment).filter(
+                            HsEnrichment.intent == 'bug_report',
+                            HsEnrichment.last_enriched_at >= two_days_ago
+                        ).count()
+                        
+                        if recent_complaints > 20: # If more than 20 in 48h
+                            new_bucket = 'high'
+                        elif recent_complaints > 10: # If more than 10 in 48h
+                            new_bucket = 'medium'
+                        else:
+                            new_bucket = 'low'
+                    except Exception as e:
+                        print(f"⚠️ Failed to check recent complaint volume: {e}")
+                        new_bucket = 'low'
+                elif intent == 'delete_account':
+                    new_bucket = 'low'
+                elif intent == 'question' or intent == 'feedback':
+                    new_bucket = 'low'
+
+                # Keyword-based overrides for critical issues
+                if any(k in raw.lower() for k in ["can't play", "unable to play"]):
+                    new_bucket = 'high'
+                
+                if new_bucket:
+                    print(f"🧠 Overriding severity for intent '{intent}'/'{root_cause}' to '{new_bucket}' (was '{bucket}')")
+                    bucket = new_bucket
+                
+                # Force empty tickets to LOW (FINAL OVERRIDE)
                 if extra.get("intent") == "incomplete_ticket":
                     bucket = "low"
                 
