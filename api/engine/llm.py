@@ -68,11 +68,13 @@ def enrich(text: str, user_corrections: list = None) -> dict:
     original_len = len(text)
     cleaned = text
     
-    # Remove ALL template patterns
-    cleaned = re.sub(r'(?i)user\s*id\s*[=:]\s*[a-f0-9\-]+', '', cleaned)
-    cleaned = re.sub(r'(?i)os\s*[=:]\s*[\w\s]+', '', cleaned)
-    cleaned = re.sub(r'(?i)device\s*[=:]\s*[\w\s\-\(\)]+', '', cleaned)
-    cleaned = re.sub(r'(?i)platform\s*[=:]\s*[\w\s]+', '', cleaned)
+    # Remove template patterns line-by-line
+    cleaned = re.sub(r'(?im)^user\s*id\s*[=:]\s*.*$', '', cleaned)
+    cleaned = re.sub(r'(?im)^os\s*[=:]\s*.*$', '', cleaned)
+    cleaned = re.sub(r'(?im)^device\s*[=:]\s*.*$', '', cleaned)
+    cleaned = re.sub(r'(?im)^platform\s*[=:]\s*.*$', '', cleaned)
+    
+    # General cleanup
     cleaned = re.sub(r'<[^>]+>', '', cleaned)  # Remove ALL HTML
     cleaned = re.sub(r'Support Request', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'\[PeerPlay Games\]', '', cleaned, flags=re.IGNORECASE)
