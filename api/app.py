@@ -101,7 +101,7 @@ async def general_exception_handler(request, exc):
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
         }
-    )
+)
 
 # --- Very lightweight in‑process pubsub for real‑time notifications (dev only) ---
 import asyncio
@@ -423,17 +423,17 @@ def provide_feedback(conv_id: int, correct_intent: str = None, correct_severity:
     """User provides feedback on incorrect tagging AND immediately update the ticket."""
     import json
     updated_ticket = None  # Initialize to None
-
+    
     with get_session() as s:
         try:
             enrichment = s.query(HsEnrichment).filter(HsEnrichment.conv_id == conv_id).first()
-            if enrichment:
-                if correct_intent:
-                    enrichment.intent = correct_intent
+        if enrichment:
+            if correct_intent:
+                enrichment.intent = correct_intent
                 if correct_severity:
                     enrichment.severity_bucket = correct_severity
-                enrichment.last_enriched_at = datetime.utcnow()
-                s.commit()
+            enrichment.last_enriched_at = datetime.utcnow()
+        s.commit()
                 s.refresh(enrichment) # Refresh to get the latest state from the DB
                 updated_ticket = {
                     "conv_id": enrichment.conv_id,
@@ -686,18 +686,18 @@ async def process_webhook_event(conv_id: int):
                     entities = {}
                 else:
                     # Compute severity ONLY if enrichment was successful
-                    entities = classify.extract_entities(raw)
-                    cats, rule_score = classify.categorize(raw)
-                    sev_score = severity.compute(raw, entities, rule_score)
-                    bucket = severity.bucketize(sev_score, 0, 0)
-                    if not bucket:
+                entities = classify.extract_entities(raw)
+                cats, rule_score = classify.categorize(raw)
+                sev_score = severity.compute(raw, entities, rule_score)
+                bucket = severity.bucketize(sev_score, 0, 0)
+                if not bucket:
                         # Fallback to score-based bucketing if anomaly detection doesn't trigger
-                        if sev_score >= 50:
-                            bucket = "high"
-                        elif sev_score >= 30:
-                            bucket = "medium"
-                        else:
-                            bucket = "low"
+                    if sev_score >= 50:
+                        bucket = "high"
+                    elif sev_score >= 30:
+                        bucket = "medium"
+                    else:
+                        bucket = "low"
                 
                 # NEW: Granular severity overrides based on intent and root cause
                 intent = extra.get("intent")
@@ -994,943 +994,97 @@ def volume(hours: int = 24, compare: int = 24):
     return {"current": cur, "previous": prev, "delta": delta, "delta_pct": pct}
 
 @app.get("/admin/insights")
-def insights(
-    hours: int = 24,
-    limit: int = 100,
-    use_llm: int = 1,
-    all: int = 0,
-    # incremental fetch controls
-    page: int = 1,
-    page_size: int = 0,
-    min_number: int | None = None,
-):
-    """
-    Read recent conversations and return recommended tags, summaries, and patterns.
-    Does NOT write back to Help Scout; read-only analysis.
-    """
-    now = datetime.utcnow()
-    with get_session() as s:
-        if all:
-            q = s.query(HsConversation)
-        else:
-            # Align to 24h window from 10:00 UTC to next 10:00 UTC
-            if int(hours) == 24:
-                day_start = now.replace(hour=10, minute=0, second=0, microsecond=0)
-                if now < day_start:
-                    day_start = day_start - timedelta(days=1)
-                q = s.query(HsConversation).filter(HsConversation.updated_at >= day_start)
-            else:
-                cutoff = now - timedelta(hours=max(1, hours))
-                q = s.query(HsConversation).filter(HsConversation.updated_at >= cutoff)
-        if min_number is not None:
-            try:
-                q = q.filter(HsConversation.number > int(min_number))
-            except Exception:
-                pass
-        q = q.order_by(HsConversation.updated_at.desc())
-        # Get dismissed ticket IDs but DON'T filter them out - just mark them as done
-        dismissed = s.query(TicketFeedback).filter(
-            TicketFeedback.action_type.in_(['seen', 'dismissed', 'done'])
-        ).all()
-        dismissed_ids = [fb.conversation_id for fb in dismissed]
-        
-        # DON'T FILTER - we'll show them but mark as done in the response
-            
-        # total matching count before paging
-        try:
-            total = q.count()
-        except Exception:
-            total = 0
-        # For page 1, get ALL rows for category/keyword/cluster counts, then paginate
-        # For subsequent pages, only get the page slice
-        if int(page) == 1:
-            all_rows = q.all()
-        else:
-            all_rows = []
-        # apply paging
-        _ps = page_size if page_size and page_size > 0 else limit
-        _ps = max(1, min(int(_ps), 1000))
-        _off = max(0, (int(page) - 1) * _ps)
-        rows = q.offset(_off).limit(_ps).all()
+def insights(hours: int = 48, limit: int = 100, page: int = 1, page_size: int = 50, min_number: int = 0):
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
 
-    # Get dismissed ticket IDs but DON'T filter - just mark them visually
-    dismissed_ids = set()
-    with get_session() as s2:
-        dismissed = s2.query(TicketFeedback).filter(
-            TicketFeedback.action_type.in_(['seen', 'dismissed', 'done'])
-        ).all()
-        dismissed_ids = set(fb.conversation_id for fb in dismissed)
-
-    recs = []
-    cat_totals = {}
-    word_counts = {}
-    cluster_counts = {}
-    cluster_meta = {}
-    tag_counts = {}
-    stop = set("""
-        the a an and or for from with into on at to in of is are was were be been have has had i you we they he she it this that those these not can't cannot don't do does did as by if then so but our your their my me us them when where which who whom why how what
-    """.split())
+    _ps = max(1, min(page_size, 500))
+    offset = (max(1, page) - 1) * _ps
     
-    # First pass: lightweight category/keyword/cluster counting on ALL messages (page 1 only)
-    if all_rows:
-        for c in all_rows:
-            raw = ((c.subject or "") + "\n" + (c.last_text or "")).strip()
-            entities = classify.extract_entities(raw)
-            cats, rule_score = classify.categorize(raw)
-            cats = [c for c in (cats or []) if c not in ("uncategorized", "device")]
-            for cat in (cats or []):
-                cat_totals[cat] = cat_totals.get(cat, 0) + 1
-            ck = fingerprint.cluster_key(raw, entities)
-            cluster_counts[ck] = cluster_counts.get(ck, 0) + 1
-            # Track basic cluster metadata
-            if ck not in cluster_meta:
-                sev_score = severity.compute(raw, entities, rule_score)
-                bucket = severity.bucketize(sev_score, 0, 0)
-                if not bucket:
-                    if sev_score >= 50:
-                        bucket = "high"
-                    elif sev_score >= 30:
-                        bucket = "medium"
-                    else:
-                        bucket = "low"
-                cluster_meta[ck] = {
-                    "title": (c.subject or (raw[:60] + "...")),
-                    "category": (cats or ["other"])[0].replace("_", " ").title(),
-                    "severity": {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}.get(bucket, "Medium"),
-                    "last_seen": c.updated_at.isoformat() if c.updated_at else None,
-                }
-            else:
-                # Update last_seen
-                try:
-                    prev = cluster_meta[ck].get("last_seen")
-                    cur = c.updated_at.isoformat() if c.updated_at else None
-                    if cur and (not prev or cur > prev):
-                        cluster_meta[ck]["last_seen"] = cur
-                except Exception:
-                    pass
+    with get_session() as s:
+        # Step 1: Fetch all necessary data within the time window
+        since = datetime.utcnow() - timedelta(hours=hours)
+        query = s.query(HsConversation, HsEnrichment).outerjoin(
+            HsEnrichment, HsConversation.id == HsEnrichment.conv_id
+        ).filter(HsConversation.updated_at >= since)
+        
+        if min_number > 0:
+            query = query.filter(HsConversation.number > min_number)
             
-            # This is where we determine if an agent has replied
-            agent_replied = False
-            try:
-                # A simple check for now: if there's more than one thread, assume an agent replied.
-                # This is a proxy and can be improved with more detailed thread analysis.
-                if c.threads and len(c.threads) > 1:
-                    agent_replied = True
-            except:
-                pass
+        total = query.count()
+        results = query.order_by(HsConversation.number.desc()).limit(_ps).offset(offset).all()
+
+        # Step 2: Process the results into a list of dictionaries
+    recs = []
+        for conv, enrichment in results:
+            entities = {}
+            if enrichment and enrichment.platform:
+                entities['platform'] = enrichment.platform
+            if enrichment and enrichment.app_version:
+                entities['app_version'] = enrichment.app_version
             
-            # Store this status to be used in the final recs object
-            c.agent_replied_status = agent_replied
-
-    # Remove markup/boilerplate tokens from keyword list
-    BAN_TOKENS = set([
-        'div','span','table','tbody','thead','tr','td','th','style','class','width','height','align','center',
-        'https','http','com','google','userid','user','id','color','border','cellpadding','cellspacing',
-        'href','padding','background-color','left','right','top','bottom','solid','dir','ltr','rtl','font','px','pt','em','rem',
-        'ex-mj-column-per-100','ex-mj-outlook-group-fix','mj-column','mj-text','mj-section','outlook','mso','nbsp',
-        # more non-user semantic tokens frequently observed
-        'support','request','device','play','console','game','android','iphoneplayer','get','beta','app','new','none','ddd','fff','strong','text-decoration','font-weight','bold'
-    ])
-
-    def add_words(text: str):
-        import re
-        for w in re.findall(r"[a-zA-Z][a-zA-Z0-9_\-]{2,}", (text or '').lower()):
-            if w in stop: continue
-            if w in BAN_TOKENS: continue
-            if re.match(r"^[a-z]{1,2}$", w):
-                continue
-            if any(ch.isdigit() for ch in w):
-                # keep version-like tokens
-                pass
-            word_counts[w] = word_counts.get(w, 0) + 1
-
-    def add_keywords_smart(text: str):
-        # gensim_keywords is not available, skip this feature
-                return
-
-    import re
-
-    def detect_sentiment(text: str) -> str:
-        """Detect if feedback is positive (compliment) or negative (issue/problem)"""
-        t = text.lower()
-        
-        # Strong issue indicators - these override any positives
-        strong_issues = [
-            'accidentally', 'accident', 'refund', 'help me', 'can you help', 'please help',
-            'i\'m sorry', 'need help', 'mistake', 'wrong', 'error', 'problem', 'issue'
-        ]
-        
-        # If it's clearly asking for help or reporting a problem, it's NOT a compliment
-        if any(phrase in t for phrase in strong_issues):
-            return 'neutral'  # Don't tag support requests as compliments
-        
-        # True compliment indicators (must be clear praise without issues)
-        compliments = [
-            'love this', 'love the', 'great game', 'awesome', 'amazing game', 
-            'fantastic', 'excellent', 'perfect', 'best game', 'favorite game',
-            'really enjoy', 'enjoying', 'so much fun', 'addicted', 'can\'t stop playing'
-        ]
-        # Issue/negative indicators  
-        issues = [
-            'however', 'but', 'unfortunately', 'problem', 'issue', 'bug', 'broken',
-            'irritating', 'annoying', 'frustrating', 'ridiculous', 'terrible', 'bad',
-            'worst', 'hate', 'disappointed', 'crash', 'freeze', 'stuck', 'won\'t work',
-            'can\'t', 'cannot', 'doesn\'t work', 'not working', 'too many', 'too much'
-        ]
-        
-        has_compliment = any(phrase in t for phrase in compliments)
-        has_issue = any(word in t for word in issues)
-        
-        # If message has both compliment and issue, it's mixed feedback
-        if has_compliment and has_issue:
-            return 'mixed'
-        elif has_compliment:
-            return 'positive'
-        elif has_issue:
-            return 'negative'
-        return 'neutral'
-
-    def derive_custom_tags(text: str, entities: dict, cats: list[str] | None, extra: dict | None) -> list[str]:
-        t = (text or '').lower()
-        tags: list[str] = []
-        # Intent detection (high-level user intent)
-        
-        # Sentiment tagging for feedback
-        sentiment = detect_sentiment(text)
-        if sentiment == 'positive':
-            tags.append('sentiment:compliment')
-        elif sentiment == 'negative':
-            tags.append('sentiment:issue')
-        elif sentiment == 'mixed':
-            tags.append('sentiment:mixed')
-        
-        # PRIORITY 1: Beta feedback / reviews / opinions (CHECK FIRST!)
-        # These should ALWAYS be LOW priority, even if they mention bugs/crashes
-        if any(k in t for k in ("beta feedback", "written new beta feedback", "new beta feedback", "feedback for", "my feedback", "review:", "opinion", "suggestion", "has written new beta")):
-            tags.append("intent:beta_feedback")
-            return tags  # Return early - don't check other intents
-        
-        # PRIORITY 2: Refund / billing
-        if any(k in t for k in ("refund", "chargeback", "charged twice", "double charge", "money back", "unauthorized charge", "billing issue", "payment issue", "invoice", "receipt")):
-            tags.append("intent:refund_request")
-        if any(k in t for k in ("cancel subscription", "unsubscribe", "cancel my subscription", "stop charging", "turn off auto-renew", "disable auto renew", "cancel renewal")):
-            tags.append("intent:cancel_subscription")
-        # Monetization/Gameplay complaints (negative feedback about game mechanics)
-        elif any(k in t for k in ("out of energy", "no energy", "energy system", "too expensive", "pay to win", "paywall", "spend money", "watch ads", "watching ads", "not worth", "greedy", "cash grab")):
-            tags.append("intent:monetization_complaint")
-        # Gameplay balance/mechanics complaints
-        elif any(k in t for k in ("too hard", "too difficult", "impossible", "unfair", "bad design", "poor design", "frustrating", "annoying")):
-            tags.append("intent:gameplay_feedback")
-        # Account access / credentials (VERY common) - BUT check context
-        # Only tag as account_access if there's ACTUAL login problem keywords
-        elif any(k in t for k in ("can't log in", "cant log in", "cannot log in", "login problem", "log in problem", "password reset", "forgot password", "2fa", "two factor", "verification code", "verification email")):
-            # Make sure it's not just mentioning login in passing
-            if not any(phrase in t for phrase in ("i log in and", "when i log in", "after i log in", "logged in and")):
-                tags.append("intent:account_access")
-        if any(k in t for k in ("delete my account", "delete account", "remove my data", "erase my data", "gdpr", "ccpa")):
-            tags.append("intent:account_deletion")
-        # Store login issues (specific pattern from Google Play Console / App Store)
-        if any(k in t for k in ("store", "google play", "play store", "app store")) and any(k in t for k in ("login", "sign in", "log in", "problem", "issue", "error")):
-            tags.append("intent:account_access")
-            tags.append("tag:store_issue")
-        # Lost progress / restore
-        if any(k in t for k in ("progress lost", "lost progress", "save lost", "reset progress", "rollback")):
-            tags.append("intent:recover_progress")
-        # Critical issues - app/game completely broken
-        if any(k in t for k in ("app crash", "game crash", "crashing", "force close", "won't start", "can't start", "won't open", "can't open")):
-            tags.append("intent:bug_report")
-            tags.append("tag:critical_crash")
-        # Item issues - HIGH priority (affects user progress/purchases)
-        elif any(k in t for k in ("item stuck", "stuck item", "item disappeared", "item gone", "item missing", "stuck on board", "can't remove", "cannot remove")):
-            tags.append("intent:bug_report")
-            tags.append("tag:item_stuck")
-        # App freeze/stuck (not crash but serious)
-        elif any(k in t for k in ("stuck on", "freeze", "freezing", "frozen", "not responding", "stuck at")):
-            tags.append("intent:bug_report")
-            tags.append("tag:app_freeze")
-        # Generic bug/feedback (lower priority)
-        elif any(k in t for k in ("bug", "glitch", "issue", "problem")):
-            tags.append("intent:bug_report")
-        # Performance
-        if any(k in t for k in ("slow", "lag", "stutter", "fps", "performance")):
-            tags.append("intent:performance_issue")
-        # Feature request / how-to
-        if any(k in t for k in ("feature request", "please add", "could you add", "it would be great if")):
-            tags.append("intent:feature_request")
-        if any(k in t for k in ("how do i", "how to", "where is", "can you explain", "how can i")):
-            tags.append("intent:how_to")
-            tags.append("tag:how_to")  # Also add as visible tag
-        # Device migration
-        if any(k in t for k in ("new phone", "new device", "switch device", "migrate", "transfer progress", "restore purchase")):
-            tags.append("intent:device_migration")
-        # Store reviews
-        if any(k in t for k in ("review", "rate", "rating")) and any(k in t for k in ("play store", "google play", "app store", "store")):
-            tags.append("review:store")
-        # UX issues
-        if any(k in t for k in ("ux", "ui", "button", "menu", "layout", "confus", "hard to", "can't find", "cannot find")):
-            tags.append("tag:ux_issue")
-        # Credits not received (NOT purchase - earned credits missing)
-        if any(k in t for k in ("didn't get credits", "not getting credits", "credits missing", "credits disappeared", "no credits", "credits not received", "earned credits", "task credits")):
-            tags.append("tag:credits_missing")
-            tags.append("intent:bug_report")  # This is a bug, not purchase
-        # Actual purchase/payment issues (spent money)
-        elif any(k in t for k in ("purchase", "payment", "charged", "iap", "in-app", "subscription", "renewal", "bought", "paid for")):
-            tags.append("tag:purchase_issue")
-        # Domain-specific keyword: flowers
-        if "flowers" in t or "flower" in t:
-            tags.append("flowers")
-        # Content/features disappeared (NOT purchase - could be tasks, levels, items)
-        if any(k in t for k in ("daily tasks disappeared", "tasks disappeared", "disappeared", "things disappeared", "features disappeared", "content disappeared")):
-            tags.append("tag:content_missing")
-            if "intent:bug_report" not in tags: tags.append("intent:bug_report")
-        # Item disappeared / progress lost / restart prompts
-        if any(k in t for k in ("item disappeared", "item gone", "lost item", "missing item", "inventory missing")):
-            tags.append("tag:item_disappeared")
-            if "intent:bug_report" not in tags: tags.append("intent:bug_report") # Also a bug
-        if any(k in t for k in ("progress lost", "lost progress", "save lost", "progress reset", "account reset", "losing progress", "not saving", "progress not saving", "went back to", "back to level", "rollback to level")):
-            tags.append("tag:progress_lost")
-            tags.append("intent:bug_report") # Also a bug
-        # Platform tags from entities or LLM
-        platform = (entities or {}).get("platform") or (extra or {}).get("platform")
-        if isinstance(platform, str) and platform:
-            tags.append(f"platform:{platform}")
-        # App version
-        appv = (entities or {}).get("app_version") or (extra or {}).get("app_version")
-        if isinstance(appv, str) and appv:
-            tags.append(f"version:{appv}")
-        return tags
-
-    def interpret_hs_tags(tag_list) -> tuple[str | None, list[str]]:
-        """Learn from existing Help Scout tags to determine intent and extract additional context."""
-        names = [str(t or '').lower().strip() for t in (tag_list or [])]
-        extra: list[str] = []
-        mapped_intent: str | None = None
-        def has(*keys: str) -> bool:
-            return any(any(k in n for k in keys) for n in names)
-        
-        # PRIORITY 1: Beta feedback / opinions (CHECK FIRST - always LOW priority)
-        if has('beta','feedback','review','opinion','suggestion'):
-            return 'beta_feedback', []  # Return early to prevent other patterns
-        
-        # Store-related (high priority for store issues)
-        if has('store','google play','play store','app store','ios','review:store'):
-            extra.append('tag:store_issue'); 
-            if has('login','sign in','log in','can\'t login','cannot login'):
-                mapped_intent = mapped_intent or 'account_access'
-            elif has('problem','issue','error','not working'):
-                mapped_intent = mapped_intent or 'bug_report'
-        
-        # Monetization/Energy complaints
-        elif has('energy','monetization','pay to win','paywall','expensive','greedy','cash grab','ads'):
-            mapped_intent = mapped_intent or 'monetization_complaint'
-        
-        # Gameplay feedback/balance
-        elif has('too hard','difficult','impossible','unfair','frustrating','bad design'):
-            mapped_intent = mapped_intent or 'gameplay_feedback'
-        
-        # Login/Account access (very common) - be careful not to over-match
-        if has('login problem','login failed','login error','locked out','can\'t access account','password reset'):
-            mapped_intent = mapped_intent or 'account_access'
-        
-        # Progress/Save issues (critical for games)
-        if has('progress_lost','progress lost','progress','save lost','rollback','not saving','lost progress','reset','went back','losing progress'):
-            extra.append('tag:progress_lost'); mapped_intent = mapped_intent or 'recover_progress'
-        
-        # Critical crashes (app completely broken)
-        if has('crash','crashing','force close','not responding','won\'t start','won\'t open'):
-            extra.append('tag:critical_crash'); mapped_intent = mapped_intent or 'bug_report'
-        # Item stuck/disappeared (high priority)
-        elif has('item stuck','stuck item','item disappeared','stuck on board','item missing'):
-            extra.append('tag:item_stuck'); mapped_intent = mapped_intent or 'bug_report'
-        # App freeze (serious but not crash)
-        elif has('stuck','freeze','freezing','frozen','stuck at'):
-            extra.append('tag:app_freeze'); mapped_intent = mapped_intent or 'bug_report'
-        # Generic bugs (lower priority)
-        elif has('bug','exception','glitch'):
-            mapped_intent = mapped_intent or 'bug_report'
-        
-        # Payment/Billing (high priority)
-        if has('refund','billing','payment','charged','double charge','subscription','cancel subscription','iap','in-app purchase'):
-            extra.append('tag:purchase_issue')
-            if has('cancel','stop','unsubscribe'):
-                mapped_intent = mapped_intent or 'cancel_subscription'
-            else:
-                mapped_intent = mapped_intent or 'refund_request'
-        
-        # How-to questions (low severity but common)
-        if has('how_to','how-to','how to','question','help','where is','how do i','how can i','explain'):
-            mapped_intent = mapped_intent or 'how_to'
-        
-        # Device migration/transfer
-        if has('device','migration','transfer','restore purchase','new phone','new device','switch device'):
-            mapped_intent = mapped_intent or 'device_migration'
-        
-        # Missing items/inventory
-        if has('missing_item','item missing','lost item','inventory','item disappeared','disappeared'):
-            extra.append('tag:item_disappeared')
-        
-        # Performance issues
-        if has('slow','lag','laggy','stutter','fps','performance','freezing'):
-            mapped_intent = mapped_intent or 'performance_issue'
-        
-        # Account deletion (GDPR/privacy)
-        if has('delete account','remove account','delete my data','gdpr','ccpa'):
-            mapped_intent = mapped_intent or 'account_deletion'
-        
-        # Restart/reinstall suggestions
-        if has('restart','reinstall','re-install'):
-            extra.append('tag:restart_prompt')
-        
-        # Game-specific tags
-        if has('flowers','flower'):
-            extra.append('flowers')
-        if has('level','lvl'):
-            extra.append('tag:level_related')
-        
-        return mapped_intent, extra
-
-    def build_one_liner(text: str, entities: dict, cats: list[str] | None, extra: dict | None, bucket: str | None, suggested: list[str]) -> str:
-        try:
-            t = (text or '').strip()
-            platform = (entities or {}).get('platform') or (extra or {}).get('platform')
-            appv = (entities or {}).get('app_version') or (extra or {}).get('app_version')
-            lvl = (entities or {}).get('level')
-            intent = ''
-            for tag in (suggested or []):
-                if isinstance(tag, str) and tag.startswith('intent:'):
-                    intent = tag.split(':', 1)[1]
-                    break
-            intent_map = {
-                'refund_request': 'refund request',
-                'cancel_subscription': 'subscription cancellation',
-                'account_access': 'account access issue',
-                'account_deletion': 'account deletion request',
-                'recover_progress': 'recover lost progress',
-                'bug_report': 'bug/crash report',
-                'performance_issue': 'performance issue',
-                'feature_request': 'feature request',
-                'how_to': 'how-to question',
-                'device_migration': 'device migration/restore',
-                'monetization_complaint': 'monetization feedback',
-                'gameplay_feedback': 'gameplay feedback',
-                'beta_feedback': 'beta feedback',
-            }
-            primary_cat = None
-            for ccat in (cats or []):
-                if ccat not in ('uncategorized','device'):
-                    primary_cat = ccat.replace('_',' ')
-                    break
-            # Build more descriptive label from actual ticket content
-            # Extract the first meaningful sentence or phrase
-            first_sentence = ''
-            try:
-                # Try multiple extraction methods
-                text_clean = t.replace('\n', ' ').strip()
-                
-                # Method 1: Look for complete sentences
-                sentences = text_clean.split('.')
-                for sent in sentences[:5]:
-                    sent = sent.strip()
-                    if len(sent) > 25 and len(sent) < 200:
-                        # Skip boilerplate
-                        if not any(skip in sent.lower() for skip in ['help scout', 'merge cube', 'merge cruise', 'google play console', 'userid', 'device =', 'os =']):
-                            first_sentence = sent
-                            break
-                
-                # Method 2: If no good sentence, extract key phrases
-                if not first_sentence and len(text_clean) > 10:
-                    # Look for problem descriptions
-                    problem_words = ['disappeared', 'missing', 'not working', 'crash', 'freeze', 'stuck', 'problem', 'issue', 'bug', 'error']
-                    lines = text_clean.split('\n')
-                    for line in lines[:3]:
-                        line = line.strip()
-                        if len(line) > 15 and len(line) < 150:
-                            if any(word in line.lower() for word in problem_words):
-                                first_sentence = line
-                                break
-                
-                # Method 3: Fallback to first substantial line
-                if not first_sentence:
-                    lines = text_clean.split('\n')
-                    for line in lines[:3]:
-                        line = line.strip()
-                        if len(line) > 10 and len(line) < 100:
-                            if not any(skip in line.lower() for skip in ['userid', 'device', 'os =', 'much regards']):
-                                first_sentence = line
-                                break
-            except:
-                pass
-            
-            # If we have a good sentence, use it; otherwise fall back to intent
-            if first_sentence and len(first_sentence) > 30:
-                label = first_sentence[:100]  # Cap at 100 chars
-            else:
-                label = intent_map.get(intent, primary_cat or 'support request')
-            
-            parts = []
-            # Only add severity prefix for high/critical
-            if bucket and str(bucket).lower() in ("high","critical"):
-                parts.append(str(bucket).lower())
-            if not first_sentence or len(first_sentence) < 30:
-                parts.append(label)
-            if appv:
-                parts.append(f"v{appv}")
-            if isinstance(lvl, int):
-                parts.append(f"lvl {lvl}")
-            # quick context phrase
-            low = t.lower()
-            if 'after update' in low or 'after updating' in low:
-                parts.append('after update')
-            elif 'on launch' in low or 'at startup' in low or 'start the app' in low:
-                parts.append('on launch')
-            elif 'payment' in low or 'purchase' in low or 'charged' in low:
-                parts.append('payment issue')
-            elif 'login' in low or 'log in' in low:
-                parts.append('login problem')
-            s = ' '.join(parts)
-            return s[:180]
-        except Exception:
-            return 'support request'
-
-    for c in rows:
-        raw = ((c.subject or "") + "\n" + (c.last_text or "")).strip()
-        # Only count keywords from the user's message body; augment with gensim if available
-        msg = c.last_text or ''
-        add_words(msg)
-        add_keywords_smart(msg)
-        entities = classify.extract_entities(raw)
-        cats, rule_score = classify.categorize(raw)
-        # Delta-aware enrichment: reuse cached enrichment when content unchanged
-        extra = {}
-        content_hash = None
-        try:
-            content_hash = hashlib.sha256(raw.encode('utf-8')).hexdigest()
-        except Exception:
-            pass
-
-        # ALWAYS read from cache if exists (trust the cache!)
-        cached = None
-        try:
-            cached = s.query(HsEnrichment).filter(HsEnrichment.conv_id == c.id).first()
-        except Exception:
-            pass
-        
-        if cached:
-            # Use cached data regardless of content_hash
-            extra = {
-                "summary": getattr(cached, 'summary', None),
-                "intent": getattr(cached, 'intent', None),
-                "root_cause": getattr(cached, 'root_cause', None),
-                "tags": (getattr(cached, 'tags', '') or '').split(',') if getattr(cached, 'tags', '') else [],
-            }
-            # Use cached severity
-            cached_sev = getattr(cached, 'severity_bucket', None)
-            if cached_sev and str(cached_sev) not in ('None', 'none', ''):
-                bucket = cached_sev
-        else:
-            # No cache
-            extra = {}
-        
-        # --- Build final ticket object ---
-        
-        one_liner = extra.get("summary")
-        # Fallback if LLM failed
-        if not one_liner:
-            one_liner = c.subject or "No description available"
-        
-        # Check if agent has replied
-        agent_replied = False
-        try:
-            # Check Help Scout tags for agent:replied indicator
-            if c.tags and 'agent:replied' in c.tags.lower():
-                agent_replied = True
-            # Also check if there are multiple threads (fallback)
-            elif c.threads and len(c.threads) > 1:
-                agent_replied = True
-        except:
-            pass
-        
-        # Combine tags from various sources
-        llm_tags = extra.get("tags", [])
-        
-        # Add intent tag
-        if extra.get("intent"):
-            llm_tags.append(f"intent:{extra['intent']}")
-        
-        # Add root cause as a tag
-        if extra.get("root_cause"):
-            rc = extra['root_cause'].lower()
-            llm_tags.append(f"cause:{extra['root_cause']}")
-            
-            # Add specific issue type tags based on root cause
-            if any(word in rc for word in ["crash", "crashing", "force close"]):
-                llm_tags.append("issue:crash")
-            elif any(word in rc for word in ["freeze", "freezing", "frozen", "stuck", "not responding"]):
-                llm_tags.append("issue:freeze")
-            elif any(word in rc for word in ["bug", "glitch", "error", "broken"]):
-                llm_tags.append("issue:bug")
-        
-        # NOTE: agent:replied is added to existing_tags below, not here
-            
-        final_tags = list(set(llm_tags)) # Simplified, as other sources were removed
-        
-        # Compute severity
-        sev_score = severity.compute(raw, entities, rule_score)
-        bucket = severity.bucketize(sev_score, 0, 0)
-        if not bucket:
-            if sev_score >= 50:
-                bucket = "high"
-            elif sev_score >= 30:
-                bucket = "medium"
-            else:
-                bucket = "low"
-        
-        suggested_tags = [f"sev:{bucket}"] + final_tags
-        
-        # Get Help Scout tags
-        existing_tags = []
-        if c.tags:
-            existing_tags = [t.strip() for t in c.tags.split(',') if t.strip()]
-        
-        # Add agent:replied to existing tags (it's a behavioral tag, not LLM-generated)
-        if agent_replied and 'agent:replied' not in existing_tags:
-            existing_tags.append('agent:replied')
-        
-        # Compute cluster key
-        cluster_key = fingerprint.cluster_key(raw, entities)
-        
-        # Check if dismissed
-        is_dismissed = c.id in dismissed_ids
-        
-        # Extract game UserID from message text
-        game_user_id = getattr(c, 'game_user_id', None)
-        if not game_user_id and c.last_text:
-            try:
-                import re
-                match = re.search(r'(?i)user\s*id\s*[=:]\s*([a-f0-9]{24})', c.last_text)
-                if match:
-                    game_user_id = match.group(1)
-            except Exception:
-                pass
-
-        # Build recommendation object
-        rec = {
-            "conv_id": c.id,
-            "number": c.number,
-            "subject": c.subject,
-            "one_liner": one_liner,
-            "text": c.last_text or "",
-            "categories": cats or [],
+            recs.append({
+                "conv_id": conv.id,
+                "number": conv.number,
+                "subject": conv.subject,
+                "updated_at": conv.updated_at.isoformat() if conv.updated_at else None,
+                "customer_name": conv.customer_name,
+                "first_name": conv.first_name,
+                "last_name": conv.last_name,
+                "game_user_id": conv.game_user_id,
+                "existing_tags": (conv.tags or "").split(',') if conv.tags else [],
+                "summary": enrichment.summary if enrichment else None,
+                "one_liner": enrichment.one_liner if enrichment else None,
+                "intent": enrichment.intent if enrichment else None,
+                "root_cause": enrichment.root_cause if enrichment else None,
+                "severity_bucket": enrichment.severity_bucket if enrichment else 'low',
             "entities": entities,
-            "severity_score": sev_score,
-            "severity_bucket": bucket,
-            "cluster_key": cluster_key,
-            "suggested_tags": suggested_tags,
-            "existing_tags": existing_tags,
-            "intent": extra.get("intent"),
-            "root_cause": extra.get("root_cause"),
-            "customer_name": getattr(c, 'customer_name', None),
-            "first_name": getattr(c, 'first_name', None),
-            "last_name": getattr(c, 'last_name', None),
-            "game_user_id": game_user_id,
-            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-            "hs_link": f"https://secure.helpscout.net/conversation/{c.id}",
-            "is_dismissed": is_dismissed,
-            "agent_replied_status": agent_replied,
-        }
-        recs.append(rec)
+            })
 
-    # Post-process: adjust severity by repetition and categories
-    for r in recs:
-        ck = r.get("cluster_key")
-        if ck:
-            similar = cluster_counts.get(ck, 1)
-            # expose similar count to clients
-            r["similar_count"] = similar
-            # Escalate to CRITICAL if many users affected (10+)
-            if similar >= 10:
-                r["severity_bucket"] = "critical"
-                r["escalation_reason"] = f"🔥 CRITICAL: {similar} users affected by same issue"
-            # Escalate to HIGH if multiple users affected (5+)
-            elif similar >= 5 and r["severity_bucket"] not in ("critical", "high"):
-                r["severity_bucket"] = "high"
-                r["escalation_reason"] = f"⚠️ Escalated to HIGH: {similar} similar reports"
-        cats_l = set((r.get("categories") or []))
-        tags_l = set((r.get("suggested_tags") or []))
+        # Step 3: Perform aggregations for the issue_analysis
+    intents_count = {}
+    platform_count = {}
+    severity_count = {"critical":0, "high":0, "medium":0, "low":0}
         
-        # Severity escalation based on category and tags
-        # Critical issues - app completely broken or severe item issues
-        if "tag:critical_crash" in tags_l or "tag:item_stuck" in tags_l:
-            r["severity_bucket"] = "high"
-        elif "tag:app_freeze" in tags_l:
-            # Freeze is always HIGH - blocks gameplay completely
-            r["severity_bucket"] = "high"
-        elif "crash" in cats_l:
-            r["severity_bucket"] = "high"
-        # Check for crash/freeze/stuck in LLM tags (simple keywords)
-        # Be specific - only escalate TRUE crashes/freezes, not gameplay issues
-        crash_keywords = {"crash", "crashing", "freeze", "freezing", "frozen", "force-close", "not-responding"}
-        stuck_keywords = {"stuck", "loading", "infinite-loop"}
-        
-        # Check for critical crash indicators
-        if any(keyword in tags_l for keyword in crash_keywords):
-            r["severity_bucket"] = "high"
-            r["escalation_reason"] = "⚠️ Escalated to HIGH: App crash/freeze detected"
-        # "stuck" only escalates if combined with UI/loading context (not gameplay)
-        elif any(keyword in tags_l for keyword in stuck_keywords):
-            # Only escalate if it's a UI/loading issue, not a gameplay mechanic issue
-            root_cause = r.get("root_cause", "").lower()
-            if any(term in root_cause for term in ["app", "game", "loading", "screen", "launch"]):
-                r["severity_bucket"] = "high"
-                r["escalation_reason"] = "⚠️ Escalated to HIGH: App stuck/loading issue"
-        # Item disappeared/missing items (affects user purchases/progress)
-        if "tag:item_disappeared" in tags_l and r["severity_bucket"] in ("low", "medium"):
-            r["severity_bucket"] = "high"
-        # Payment issues are important (revenue)
-        payment_keywords = {"payment", "purchase", "charged", "refund", "billing", "subscription", "iap", "in-app-purchase"}
-        if "payment" in cats_l or any(keyword in tags_l for keyword in payment_keywords):
-            if r["severity_bucket"] == "low":
-                r["severity_bucket"] = "medium"
-        # Progress lost is at least medium
-        progress_keywords = {"progress", "save", "lost", "reset", "rollback", "disappeared", "missing"}
-        if "progress_lost" in cats_l or any(keyword in tags_l for keyword in progress_keywords):
-            if r["severity_bucket"] == "low":
-                r["severity_bucket"] = "medium"
-        # Store issues should be at least medium (affects revenue)
-        if "tag:store_issue" in tags_l and r["severity_bucket"] == "low":
-            r["severity_bucket"] = "medium"
-        # Login/account access issues should be medium (critical UX)
-        if "intent:account_access" in tags_l and r["severity_bucket"] == "low":
-            r["severity_bucket"] = "medium"
-        # Beta feedback, monetization complaints, and gameplay feedback stay LOW (just feedback, not bugs)
-        if "intent:beta_feedback" in tags_l or "intent:monetization_complaint" in tags_l or "intent:gameplay_feedback" in tags_l:
-            r["severity_bucket"] = "low"  # Force to low regardless of initial scoring
-        # Generic bug reports without critical keywords stay lower priority
-        # (e.g., "I found a bug" feedback vs "app crashes every time")
-
-    # Count replied vs unreplied tickets
-    replied_count = 0
-    unreplied_count = 0
     for r in recs:
-        tags = r.get("existing_tags", [])
-        if "agent:replied" in tags:
-            replied_count += 1
-        else:
-            unreplied_count += 1
+        if r.get("intent"):
+            intents_count[r["intent"]] = intents_count.get(r["intent"], 0) + 1
             
-    issue_analysis["replied_count"] = replied_count
-    issue_analysis["unreplied_count"] = unreplied_count
+            p = (r.get("entities") or {}).get("platform")
+            if p:
+                platform_count[p] = platform_count.get(p, 0) + 1
+            
+        b = r.get("severity_bucket")
+        if b in severity_count:
+            severity_count[b] += 1
 
-    # Sort by highest ticket number first (assumes higher number == newer)
-    recs.sort(key=lambda r: (r.get("number") or 0), reverse=True)
-
-    # compute priority issue (severity-weighted count)
-    weights = {"Critical": 8, "High": 4, "Medium": 2, "Low": 1}
-    best_id = None
-    best_score = -1
-    for ck, cnt in cluster_counts.items():
-        meta = cluster_meta.get(ck, {})
-        sev_label = (meta.get("severity") or "Medium")
-        # boost clusters with very recent activity
-        recent_boost = 1
-        try:
-            last_seen = meta.get("last_seen")
-            if last_seen:
-                dt = datetime.fromisoformat(last_seen)
-                if (datetime.utcnow() - dt) <= timedelta(hours=6):
-                    recent_boost = 1.5
-        except Exception:
-            pass
-        score = cnt * weights.get(sev_label, 2) * recent_boost
-        if score > best_score:
-            best_score = score
-            best_id = ck
-    priority_issue = None
-    if best_id:
-        meta = cluster_meta.get(best_id, {})
-        priority_issue = {
-            "id": best_id,
-            "title": meta.get("title") or best_id,
-            "category": meta.get("category") or "Other",
-            "severity": meta.get("severity") or "Medium",
-            "occurrences": cluster_counts.get(best_id, 0),
-            "last_seen": meta.get("last_seen"),
+        # Step 4: Build the issue_analysis dictionary
+    issue_analysis = {
+        "intents": [{"name": k, "count": v} for k,v in sorted(intents_count.items(), key=lambda x: x[1], reverse=True)],
+        "platforms": [{"name": k, "count": v} for k,v in sorted(platform_count.items(), key=lambda x: x[1], reverse=True)],
+        "severities": [{"bucket": bk.title(), "count": severity_count[bk]} for bk in ["critical","high","medium","low"]],
         }
 
-    # Generate global summary (page 1 only) - REAL insights, not generic stats
+        # Step 5: Calculate replied/unreplied counts and add them
+        replied_count = sum(1 for r in recs if "agent:replied" in r.get("existing_tags", []))
+        unreplied_count = len(recs) - replied_count
+        issue_analysis["replied_count"] = replied_count
+        issue_analysis["unreplied_count"] = unreplied_count
+
+        # Step 6: Generate the global summary
     global_summary = ""
     if int(page) == 1 and recs:
-        try:
-            total_tickets = len(recs)
-            high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
-            
-            # Collect root causes (actual problems, not intents)
-            root_causes = {}
-            platforms = {}
-            for r in recs:
-                rc = r.get('root_cause', '')
-                if rc and len(rc) > 5:  # Real causes, not empty strings
-                    root_causes[rc] = root_causes.get(rc, 0) + 1
-                
-                # Extract platform from tags
-                for tag in r.get('suggested_tags', []):
-                    if tag in ['android', 'ios', 'ipad', 'mobile']:
-                        platforms[tag] = platforms.get(tag, 0) + 1
-            
-            # Find the most common specific problem
-            top_problem = None
-            if root_causes:
-                top_problem = max(root_causes.items(), key=lambda x: x[1])
-            
-            # Build insightful summary
-            parts = []
-            
-            if high_critical > 0:
-                parts.append(f"⚠️ {high_critical} critical issues")
-            
-            if top_problem and top_problem[1] >= 3:
-                parts.append(f"trending issue: '{top_problem[0]}' ({top_problem[1]} reports)")
-            elif top_problem:
-                parts.append(f"top issue: '{top_problem[0]}'")
-            
-            if platforms:
-                top_platform = max(platforms.items(), key=lambda x: x[1])
-                if top_platform[1] >= 5:
-                    parts.append(f"mainly {top_platform[0]} users ({top_platform[1]} tickets)")
-            
-            if parts:
-                global_summary = " | ".join(parts) + f" | {total_tickets} total"
-            else:
-                global_summary = f"✅ {total_tickets} tickets, no major patterns detected"
-                
-        except Exception as e:
-            global_summary = f"Analysis error: {e}"  # Debug what's wrong
+            global_summary = llm.get_global_summary(recs)
 
+        # Step 7: Return the complete payload
     return {
         "count": len(recs),
         "total": total,
         "page": int(page),
         "page_size": int(_ps),
-        "replied_count": replied_count,
-        "unreplied_count": unreplied_count,
         "global_summary": global_summary,
-        "top_categories": [{"name": k, "count": v} for k, v in top_categories],
-        "top_keywords": [{"word": k, "count": v} for k, v in top_keywords],
-        "top_clusters": [{"cluster_key": k, "count": v} for k, v in top_clusters],
-        "tag_stats": sorted([{"tag": k, "count": v} for k, v in tag_counts.items()], key=lambda x: x["count"], reverse=True)[:100],
         "recommendations": recs,
-        "priorityIssue": priority_issue,
         "issue_analysis": issue_analysis,
-        "clusters": [{"id": k, "count": v} for k,v in top_clusters],
-    }
-
-    # Count replied vs unreplied and add to issue_analysis
-    replied_count = sum(1 for r in recs if "agent:replied" in r.get("existing_tags", []))
-    unreplied_count = len(recs) - replied_count
-    issue_analysis["replied_count"] = replied_count
-    issue_analysis["unreplied_count"] = unreplied_count
-
-    # Sort by highest ticket number first (assumes higher number == newer)
-    recs.sort(key=lambda r: (r.get("number") or 0), reverse=True)
-
-    # compute priority issue (severity-weighted count)
-    weights = {"Critical": 8, "High": 4, "Medium": 2, "Low": 1}
-    best_id = None
-    best_score = -1
-    for ck, cnt in cluster_counts.items():
-        meta = cluster_meta.get(ck, {})
-        sev_label = (meta.get("severity") or "Medium")
-        # boost clusters with very recent activity
-        recent_boost = 1
-        try:
-            last_seen = meta.get("last_seen")
-            if last_seen:
-                dt = datetime.fromisoformat(last_seen)
-                if (datetime.utcnow() - dt) <= timedelta(hours=6):
-                    recent_boost = 1.5
-        except Exception:
-            pass
-        score = cnt * weights.get(sev_label, 2) * recent_boost
-        if score > best_score:
-            best_score = score
-            best_id = ck
-    priority_issue = None
-    if best_id:
-        meta = cluster_meta.get(best_id, {})
-        priority_issue = {
-            "id": best_id,
-            "title": meta.get("title") or best_id,
-            "category": meta.get("category") or "Other",
-            "severity": meta.get("severity") or "Medium",
-            "occurrences": cluster_counts.get(best_id, 0),
-            "last_seen": meta.get("last_seen"),
-        }
-
-    # Generate global summary (page 1 only) - REAL insights, not generic stats
-    global_summary = ""
-    if int(page) == 1 and recs:
-        try:
-            total_tickets = len(recs)
-            high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
-            
-            # Collect root causes (actual problems, not intents)
-            root_causes = {}
-            platforms = {}
-            for r in recs:
-                rc = r.get('root_cause', '')
-                if rc and len(rc) > 5:  # Real causes, not empty strings
-                    root_causes[rc] = root_causes.get(rc, 0) + 1
-                
-                # Extract platform from tags
-                for tag in r.get('suggested_tags', []):
-                    if tag in ['android', 'ios', 'ipad', 'mobile']:
-                        platforms[tag] = platforms.get(tag, 0) + 1
-            
-            # Find the most common specific problem
-            top_problem = None
-            if root_causes:
-                top_problem = max(root_causes.items(), key=lambda x: x[1])
-            
-            # Build insightful summary
-            parts = []
-            
-            if high_critical > 0:
-                parts.append(f"⚠️ {high_critical} critical issues")
-            
-            if top_problem and top_problem[1] >= 3:
-                parts.append(f"trending issue: '{top_problem[0]}' ({top_problem[1]} reports)")
-            elif top_problem:
-                parts.append(f"top issue: '{top_problem[0]}'")
-            
-            if platforms:
-                top_platform = max(platforms.items(), key=lambda x: x[1])
-                if top_platform[1] >= 5:
-                    parts.append(f"mainly {top_platform[0]} users ({top_platform[1]} tickets)")
-            
-            if parts:
-                global_summary = " | ".join(parts) + f" | {total_tickets} total"
-            else:
-                global_summary = f"✅ {total_tickets} tickets, no major patterns detected"
-                
-        except Exception as e:
-            global_summary = f"Analysis error: {e}"  # Debug what's wrong
-
-    return {
-        "count": len(recs),
-        "total": total,
-        "page": int(page),
-        "page_size": int(_ps),
-        "replied_count": replied_count,
-        "unreplied_count": unreplied_count,
-        "global_summary": global_summary,
-        "top_categories": [{"name": k, "count": v} for k, v in top_categories],
-        "top_keywords": [{"word": k, "count": v} for k, v in top_keywords],
-        "top_clusters": [{"cluster_key": k, "count": v} for k, v in top_clusters],
-        "tag_stats": sorted([{"tag": k, "count": v} for k, v in tag_counts.items()], key=lambda x: x["count"], reverse=True)[:100],
-        "recommendations": recs,
-        "priorityIssue": priority_issue,
-        "issue_analysis": issue_analysis,
-        "clusters": [{"id": k, "count": v} for k,v in top_clusters],
     }
 
 @app.get("/admin/dashboard")
