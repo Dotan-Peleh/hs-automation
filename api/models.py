@@ -83,7 +83,7 @@ class TicketFeedback(Base):
     __tablename__ = 'ticket_feedback'
     id = Column(Integer, primary_key=True)
     conversation_id = Column(BigInteger, nullable=False)
-    ticket_number = Column(Integer, nullable=True)
+    ticket_number = Column(BigInteger, nullable=True)
     action_type = Column(Text, nullable=False)  # 'seen', 'dismissed', 'tag_correction'
     feedback_data = Column(Text, nullable=True)  # JSON string with details
     created_at = Column(DateTime, default=datetime.utcnow)

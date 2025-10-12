@@ -443,9 +443,16 @@ def provide_feedback(conv_id: int, correct_intent: str = None, correct_severity:
             
             # Save feedback for future learning
             feedback_data = {"correct_intent": correct_intent, "correct_severity": correct_severity, "notes": notes}
+            
+            ticket_num = 0
+            if enrichment:
+                conv_for_num = s.query(HsConversation).filter(HsConversation.id == enrichment.conv_id).first()
+                if conv_for_num:
+                    ticket_num = conv_for_num.number
+
             new_feedback = TicketFeedback(
                 conversation_id=conv_id,
-                ticket_number=enrichment.conv_id if enrichment else 0, # Placeholder
+                ticket_number=ticket_num,
                 action_type='tag_correction',
                 feedback_data=json.dumps(feedback_data)
             )
