@@ -1712,44 +1712,15 @@ def insights(
     replied_count = 0
     unreplied_count = 0
     for r in recs:
-        # Check the status we determined earlier
-        if r.get("agent_replied_status"):
+        tags = r.get("existing_tags", [])
+        if "agent:replied" in tags:
             replied_count += 1
         else:
             unreplied_count += 1
+            
+    issue_analysis["replied_count"] = replied_count
+    issue_analysis["unreplied_count"] = unreplied_count
 
-    top_categories = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)[:10]
-    top_keywords = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)[:20]
-    top_clusters = sorted(cluster_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-    # Build structured issue analysis summary for UI
-    intents_count = {}
-    tag_focus_count = {}
-    platform_count = {}
-    severity_count = {"critical":0, "high":0, "medium":0, "low":0}
-    for r in recs:
-        if r.get("intent"):
-            intents_count[r["intent"]] = intents_count.get(r["intent"], 0) + 1
-        for t in (r.get("suggested_tags") or []):
-            t = str(t or "")
-            if t.startswith("tag:") or t == "flowers":
-                tag_focus_count[t] = tag_focus_count.get(t, 0) + 1
-            if t.startswith("platform:"):
-                p = t.split(":",1)[1]
-                platform_count[p] = platform_count.get(p, 0) + 1
-        p2 = (r.get("entities") or {}).get("platform")
-        if isinstance(p2, str) and p2:
-            platform_count[p2] = platform_count.get(p2, 0) + 1
-        b = r.get("severity_bucket")
-        if b in severity_count:
-            severity_count[b] += 1
-    issue_analysis = {
-        "categories": [{"name": k, "count": v} for k,v in sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)],
-        "intents": [{"name": k, "count": v} for k,v in sorted(intents_count.items(), key=lambda x: x[1], reverse=True)],
-        "tags": [{"tag": k, "count": v} for k,v in sorted(tag_focus_count.items(), key=lambda x: x[1], reverse=True)],
-        "platforms": [{"name": k, "count": v} for k,v in sorted(platform_count.items(), key=lambda x: x[1], reverse=True)],
-        "severities": [{"bucket": bk.title(), "count": severity_count[bk]} for bk in ["critical","high","medium","low"]],
-        "clusters": [{"id": k, "count": v} for k,v in top_clusters],
-    }
     # Sort by highest ticket number first (assumes higher number == newer)
     recs.sort(key=lambda r: (r.get("number") or 0), reverse=True)
 
