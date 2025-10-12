@@ -1821,8 +1821,117 @@ def insights(
         "recommendations": recs,
         "priorityIssue": priority_issue,
         "issue_analysis": issue_analysis,
+        "clusters": [{"id": k, "count": v} for k,v in top_clusters],
     }
 
+    # Count replied vs unreplied and add to issue_analysis
+    replied_count = sum(1 for r in recs if "agent:replied" in r.get("existing_tags", []))
+    unreplied_count = len(recs) - replied_count
+    issue_analysis["replied_count"] = replied_count
+    issue_analysis["unreplied_count"] = unreplied_count
+
+    # Sort by highest ticket number first (assumes higher number == newer)
+    recs.sort(key=lambda r: (r.get("number") or 0), reverse=True)
+
+    # compute priority issue (severity-weighted count)
+    weights = {"Critical": 8, "High": 4, "Medium": 2, "Low": 1}
+    best_id = None
+    best_score = -1
+    for ck, cnt in cluster_counts.items():
+        meta = cluster_meta.get(ck, {})
+        sev_label = (meta.get("severity") or "Medium")
+        # boost clusters with very recent activity
+        recent_boost = 1
+        try:
+            last_seen = meta.get("last_seen")
+            if last_seen:
+                dt = datetime.fromisoformat(last_seen)
+                if (datetime.utcnow() - dt) <= timedelta(hours=6):
+                    recent_boost = 1.5
+        except Exception:
+            pass
+        score = cnt * weights.get(sev_label, 2) * recent_boost
+        if score > best_score:
+            best_score = score
+            best_id = ck
+    priority_issue = None
+    if best_id:
+        meta = cluster_meta.get(best_id, {})
+        priority_issue = {
+            "id": best_id,
+            "title": meta.get("title") or best_id,
+            "category": meta.get("category") or "Other",
+            "severity": meta.get("severity") or "Medium",
+            "occurrences": cluster_counts.get(best_id, 0),
+            "last_seen": meta.get("last_seen"),
+        }
+
+    # Generate global summary (page 1 only) - REAL insights, not generic stats
+    global_summary = ""
+    if int(page) == 1 and recs:
+        try:
+            total_tickets = len(recs)
+            high_critical = len([r for r in recs if r.get('severity_bucket') in ['high', 'critical']])
+            
+            # Collect root causes (actual problems, not intents)
+            root_causes = {}
+            platforms = {}
+            for r in recs:
+                rc = r.get('root_cause', '')
+                if rc and len(rc) > 5:  # Real causes, not empty strings
+                    root_causes[rc] = root_causes.get(rc, 0) + 1
+                
+                # Extract platform from tags
+                for tag in r.get('suggested_tags', []):
+                    if tag in ['android', 'ios', 'ipad', 'mobile']:
+                        platforms[tag] = platforms.get(tag, 0) + 1
+            
+            # Find the most common specific problem
+            top_problem = None
+            if root_causes:
+                top_problem = max(root_causes.items(), key=lambda x: x[1])
+            
+            # Build insightful summary
+            parts = []
+            
+            if high_critical > 0:
+                parts.append(f"⚠️ {high_critical} critical issues")
+            
+            if top_problem and top_problem[1] >= 3:
+                parts.append(f"trending issue: '{top_problem[0]}' ({top_problem[1]} reports)")
+            elif top_problem:
+                parts.append(f"top issue: '{top_problem[0]}'")
+            
+            if platforms:
+                top_platform = max(platforms.items(), key=lambda x: x[1])
+                if top_platform[1] >= 5:
+                    parts.append(f"mainly {top_platform[0]} users ({top_platform[1]} tickets)")
+            
+            if parts:
+                global_summary = " | ".join(parts) + f" | {total_tickets} total"
+            else:
+                global_summary = f"✅ {total_tickets} tickets, no major patterns detected"
+                
+        except Exception as e:
+            global_summary = f"Analysis error: {e}"  # Debug what's wrong
+
+    return {
+        "count": len(recs),
+        "total": total,
+        "page": int(page),
+        "page_size": int(_ps),
+        "replied_count": replied_count,
+        "unreplied_count": unreplied_count,
+        "global_summary": global_summary,
+        "top_categories": [{"name": k, "count": v} for k, v in top_categories],
+        "top_keywords": [{"word": k, "count": v} for k, v in top_keywords],
+        "top_clusters": [{"cluster_key": k, "count": v} for k, v in top_clusters],
+        "tag_stats": sorted([{"tag": k, "count": v} for k, v in tag_counts.items()], key=lambda x: x["count"], reverse=True)[:100],
+        "recommendations": recs,
+        "priorityIssue": priority_issue,
+        "issue_analysis": issue_analysis,
+        "clusters": [{"id": k, "count": v} for k,v in top_clusters],
+    }
 
 @app.get("/admin/dashboard")
 def dashboard(hours: int = 24):
