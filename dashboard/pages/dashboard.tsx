@@ -168,13 +168,20 @@ const Dashboard = () => {
         setInsightRecs(prevRecs => 
           prevRecs.map(rec => {
             if (rec.conv_id === convId) {
-              // Create a new object with the updated fields merged in
-              const updatedRec = {
+              const newIntent = result.updated_ticket.intent;
+              const newSeverity = result.updated_ticket.severity_bucket;
+
+              // Rebuild suggested_tags array to match the new reality
+              const newTags = (rec.suggested_tags || []).filter((t: string) => !t.startsWith('sev:') && !t.startsWith('intent:'));
+              if (newSeverity) newTags.push(`sev:${newSeverity}`);
+              if (newIntent) newTags.push(`intent:${newIntent}`);
+
+              return {
                 ...rec,
-                intent: result.updated_ticket.intent || rec.intent,
-                severity_bucket: result.updated_ticket.severity_bucket || rec.severity_bucket,
+                intent: newIntent,
+                severity_bucket: newSeverity,
+                suggested_tags: newTags,
               };
-              return updatedRec;
             }
             return rec;
           })
@@ -887,7 +894,7 @@ const Dashboard = () => {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">📋 All Messages</h3>
         
         {/* Recent Tickets (Last 48h) */}
-            <div className="space-y-3">
+        <div className="space-y-3">
           <h4 className="text-md font-semibold text-gray-700 mt-4 mb-2">Recent Tickets (Last 48 Hours)</h4>
           {Array.isArray(insightRecs) ? insightRecs
             .filter((x:any) => {
@@ -917,7 +924,7 @@ const Dashboard = () => {
               .sort((a:any,b:any)=> (new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()))
               .map((r: any) => <TicketItem key={r.conv_id} r={r} />)
               : <div className="text-gray-500">Loading tickets...</div>}
-                      </div>
+          </div>
         </details>
       </div>
 
