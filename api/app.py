@@ -422,8 +422,8 @@ def mark_ticket_seen(conv_id: int, action: str = 'dismissed'):
 def provide_feedback(conv_id: int, correct_intent: str = None, correct_severity: str = None, notes: str = None):
     """User provides feedback on incorrect tagging AND immediately update the ticket."""
     import json
-    feedback_data = {"correct_intent": correct_intent, "correct_severity": correct_severity, "notes": notes}
-    
+    updated_ticket = None  # Initialize to None
+
     with get_session() as s:
         try:
             enrichment = s.query(HsEnrichment).filter(HsEnrichment.conv_id == conv_id).first()
