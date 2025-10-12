@@ -766,6 +766,7 @@ async def process_webhook_event(conv_id: int):
                 
                 # Save to cache (UPSERT - update if exists, insert if new)
                 try:
+                    from datetime import datetime
                     if not cached:
                         cached = HsEnrichment(conv_id=conv_id)
                         s.add(cached)
