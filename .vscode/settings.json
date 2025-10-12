@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/api/.venv/bin/python",
+  "python.venvPath": "${workspaceFolder}/api/.venv",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/api"
+  ]
+}
