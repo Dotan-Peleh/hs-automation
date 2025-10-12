@@ -340,7 +340,7 @@ const Dashboard = () => {
                 </span>
               )}
               <span>📱 {r.entities?.platform}</span>
-              <span>🔢 v{r.entities?.app_version}</span>
+              <span>🔢 {r.entities?.app_version}</span>
               <span>🕐 {new Date(r.updated_at).toLocaleString()}</span>
             </div>
           </div>
