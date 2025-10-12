@@ -425,48 +425,38 @@ def provide_feedback(conv_id: int, correct_intent: str = None, correct_severity:
     feedback_data = {"correct_intent": correct_intent, "correct_severity": correct_severity, "notes": notes}
     
     with get_session() as s:
-        # 1. Save feedback for future learning
-        existing = s.query(TicketFeedback).filter_by(conversation_id=conv_id, action_type="tag_correction").first()
-        if existing:
-            existing.feedback_data = json.dumps(feedback_data)
-            existing.created_at = datetime.utcnow()
-        else:
-            fb = TicketFeedback(
+        try:
+            enrichment = s.query(HsEnrichment).filter(HsEnrichment.conv_id == conv_id).first()
+            if enrichment:
+                if correct_intent:
+                    enrichment.intent = correct_intent
+                if correct_severity:
+                    enrichment.severity_bucket = correct_severity
+                enrichment.last_enriched_at = datetime.utcnow()
+                s.commit()
+                s.refresh(enrichment) # Refresh to get the latest state from the DB
+                updated_ticket = {
+                    "conv_id": enrichment.conv_id,
+                    "intent": enrichment.intent,
+                    "severity_bucket": enrichment.severity_bucket,
+                }
+            
+            # Save feedback for future learning
+            feedback_data = {"correct_intent": correct_intent, "correct_severity": correct_severity, "notes": notes}
+            new_feedback = TicketFeedback(
                 conversation_id=conv_id,
-                action_type="tag_correction",
+                ticket_number=enrichment.conv_id if enrichment else 0, # Placeholder
+                action_type='tag_correction',
                 feedback_data=json.dumps(feedback_data)
             )
-            s.add(fb)
-        
-        # 2. IMMEDIATELY update the cached enrichment with corrected values
-        enrichment = s.query(HsEnrichment).filter_by(conv_id=conv_id).first()
-        if enrichment:
-            if correct_intent:
-                enrichment.intent = correct_intent
-            if correct_severity:
-                enrichment.severity_bucket = correct_severity
-            enrichment.last_enriched_at = datetime.utcnow()
+            s.add(new_feedback)
             s.commit()
-            updated_ticket = True
-        
-        # 3. Return updated ticket data for immediate UI update
-        conv = s.query(HsConversation).get(conv_id)
-        if conv and enrichment:
-            return {
-                "ok": True,
-                "message": "✅ Tags updated! The model learned from your correction.",
-                "updated_ticket": {
-                    "conv_id": conv_id,
-                    "intent": correct_intent or enrichment.intent,
-                    "severity_bucket": correct_severity,
-                    "suggested_tags": [
-                        f"sev:{correct_severity}" if correct_severity else None,
-                        f"intent:{correct_intent}" if correct_intent else None,
-                    ]
-                }
-            }
-    
-    return {"ok": True, "message": "Feedback saved. The model will learn from this!"}
+        except Exception as e:
+            s.rollback()
+            print(f"❌ Failed to save feedback: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save feedback")
+
+    return {"ok": True, "message": "Feedback saved and ticket updated.", "updated_ticket": updated_ticket}
 
 # Unmark ticket (remove from dismissed)
 @app.post("/admin/ticket/unmark")
