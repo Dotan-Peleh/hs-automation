@@ -188,10 +188,11 @@ def get_global_summary(tickets: list[dict]) -> str:
     
     tag_counts = Counter()
     for t in tickets:
-        tags = t.get('tags', [])
+        tags = t.get('suggested_tags', []) # Use suggested_tags which is available
         if isinstance(tags, str):
             tags = tags.split(',')
-        tag_counts.update(tag for tag in tags if tag)
+        # Filter out internal tags like 'intent:' or 'sev:'
+        tag_counts.update(tag for tag in tags if tag and not (tag.startswith('intent:') or tag.startswith('sev:')))
 
     # Get the top 3 most common intents and tags
     top_intents = intent_counts.most_common(3)

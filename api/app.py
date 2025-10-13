@@ -1359,7 +1359,7 @@ def insights(
         
         # Payment/Billing (high priority)
         if has('purchase', 'payment', 'billing', 'charged', 'refund', 'iap', 'subscription'):
-            tags.append('tag:purchase_issue')
+            extra.append('tag:purchase_issue')
             if has('cancel','stop','unsubscribe'):
                 mapped_intent = mapped_intent or 'delete_account'
             else:
