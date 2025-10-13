@@ -23,6 +23,11 @@ const Dashboard = () => {
   const [globalSummary, setGlobalSummary] = useState('');
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
 
+  const openFeedbackModal = (e: React.MouseEvent, ticket: any) => {
+    e.preventDefault();
+    setFeedbackTicket(ticket);
+  };
+
   const parseHours = (range: string) => {
     if (range.endsWith('d')) {
       return parseInt(range.replace('d', '')) * 24;
@@ -169,23 +174,18 @@ const Dashboard = () => {
       
       // IMMEDIATELY update the ticket in UI with corrected values
       if (result.updated_ticket) {
-        setInsightRecs(prevRecs => 
-          prevRecs.map(rec => {
-            if (rec.conv_id === convId) {
-              return {
-                ...rec,
-                intent: correctIntent || rec.intent,
-                severity_bucket: correctSeverity || rec.severity_bucket,
-                suggested_tags: [
-                  ...(rec.suggested_tags || []).filter(t => !t.startsWith('sev:') && !t.startsWith('intent:')),
-                  correctSeverity ? `sev:${correctSeverity}` : null,
-                  correctIntent ? `intent:${correctIntent}` : null,
-                ].filter(Boolean)
-              };
-            }
-            return rec;
-          })
-        );
+        const updatedRecs = insightRecs.map(rec => {
+          if (rec.conv_id === convId) {
+            return {
+              ...rec,
+              intent: correctIntent || rec.intent,
+              severity_bucket: correctSeverity || rec.severity_bucket,
+            };
+          }
+          return rec;
+        });
+        setInsightRecs(updatedRecs);
+        localStorage.setItem('insightRecs', JSON.stringify(updatedRecs)); // Persist changes
       }
       
       setToastMsg('✅ Tags updated instantly! Model learned from your correction.');
@@ -373,7 +373,7 @@ const Dashboard = () => {
               )}
             </div>
             <button
-              onClick={() => setFeedbackTicket(r)}
+              onClick={(e) => openFeedbackModal(e, r)}
               className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200 hover:bg-blue-100 transition-colors"
             >
               🏷️ Fix Tags
