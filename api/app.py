@@ -1358,10 +1358,10 @@ def insights(
             mapped_intent = mapped_intent or 'bug_report'
         
         # Payment/Billing (high priority)
-        if has('refund','billing','payment','charged','double charge','subscription','cancel subscription','iap','in-app purchase'):
-            extra.append('tag:purchase_issue')
+        if has('purchase', 'payment', 'billing', 'charged', 'refund', 'iap', 'subscription'):
+            tags.append('tag:purchase_issue')
             if has('cancel','stop','unsubscribe'):
-                mapped_intent = mapped_intent or 'cancel_subscription'
+                mapped_intent = mapped_intent or 'delete_account'
             else:
                 mapped_intent = mapped_intent or 'refund_request'
         

@@ -408,7 +408,7 @@ const Dashboard = () => {
                   <option value="bug_report">🐛 Bug (Gameplay Issue)</option>
                   <option value="billing_issue">💳 Billing/Payment Issue</option>
                   <option value="refund_request">💰 Refund Request</option>
-                  <option value="cancel_subscription">🚫 Cancel Subscription</option>
+                  <option value="delete_account">🚫 Delete Account / Cancel Sub</option>
                   <option value="lost_progress">💾 Lost Progress/Save Issue</option>
                   <option value="question">❓ How-To Question</option>
                   <option value="feedback">💭 Feedback/Compliment</option>

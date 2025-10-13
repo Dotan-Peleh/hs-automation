@@ -11,11 +11,10 @@ The LLM enrichment system classifies tickets into the following intents:
 | `bug_report` | Bugs/glitches that don't crash the app | Standard severity rules | - |
 | `crash_report` | App crashes/force closes | Always HIGH | - |
 | `billing_issue` | Payment/purchase/refund problems | At least MEDIUM | - |
-| `cancel_subscription` | User wants to cancel/stop subscription | Standard severity rules | - |
+| `delete_account` | User wants to delete their account or cancel a subscription | Standard severity rules | 🚨 DELETE_REQUEST |
 | `lost_progress` | Save data lost | Always HIGH | - |
 | `feedback` | General feedback/compliments | Standard severity rules | - |
 | `question` | How-to questions | Standard severity rules | - |
-| `delete_account` | Account deletion requests (GDPR/privacy) | Standard severity rules | 🚨 DELETE_REQUEST |
 | `incomplete_ticket` | Empty tickets (no real user message) | **Forced to LOW** | 📭 EMPTY_TICKET |
 | `unreadable` | Incomprehensible/gibberish messages | **Forced to LOW** | ❓ UNREADABLE |
 
