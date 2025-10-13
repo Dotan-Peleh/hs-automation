@@ -179,26 +179,37 @@ def _extract_id_like(text: str) -> str | None:
 
 def get_global_summary(tickets: list[dict]) -> str:
     """Generate a high-level summary of the current situation from a list of tickets."""
-    if not is_enabled() or not tickets:
-        return ""
-    
-    # Create a concise summary of the tickets
-    ticket_previews = []
-    for t in tickets[:20]: # Use top 20 most recent/relevant for summary
-        preview = f"- Ticket #{t.get('number')}: {t.get('one_liner')} (Severity: {t.get('severity_bucket')})"
-        ticket_previews.append(preview)
-    
-    prompt = f"""
-    You are an expert game support analyst. Based on the following recent tickets, provide a 2-3 sentence summary of the current situation for a support manager.
-    Highlight any widespread issues (look for high 'similar_count'), critical bugs, or emerging patterns. Be concise and action-oriented.
+    if not tickets:
+        return "No recent tickets to analyze."
 
-    Recent Tickets:
-    {chr(10).join(ticket_previews)}
+    from collections import Counter
 
-    Summary:
-    """
+    intent_counts = Counter(t.get('intent') for t in tickets if t.get('intent'))
     
-    # This block was a leftover from a previous implementation and is not used.
-    # The 'enrich' function uses a direct 'requests.post' call.
-    # I am removing it to fix the '_client is not defined' error.
-    return ""
+    tag_counts = Counter()
+    for t in tickets:
+        tags = t.get('tags', [])
+        if isinstance(tags, str):
+            tags = tags.split(',')
+        tag_counts.update(tag for tag in tags if tag)
+
+    # Get the top 3 most common intents and tags
+    top_intents = intent_counts.most_common(3)
+    top_tags = tag_counts.most_common(3)
+
+    summary = "Recent trends: "
+    
+    if top_intents:
+        summary += "Top intents are "
+        summary += ", ".join([f"**{intent}** ({count})" for intent, count in top_intents])
+        summary += ". "
+
+    if top_tags:
+        summary += "Most common tags are "
+        summary += ", ".join([f"`{tag}` ({count})" for tag, count in top_tags])
+        summary += "."
+
+    if not top_intents and not top_tags:
+        return f"Analyzed {len(tickets)} recent tickets. No significant trends detected."
+
+    return summary

@@ -73,6 +73,10 @@ const Dashboard = () => {
           
           const merged = [...newTickets.map((t:any)=>({...t, __new: true})), ...prevRecs];
           const final = Array.from(new Map(merged.map(item => [item.conv_id, item])).values()).slice(0, 200);
+          
+          // Sort the list only when new data is merged
+          final.sort((a:any,b:any)=> (b?.number||0)-(a?.number||0));
+
           localStorage.setItem('insightRecs', JSON.stringify(final));
           return final;
         });
@@ -899,14 +903,14 @@ const Dashboard = () => {
               const hoursAgo = (new Date().getTime() - ticketDate.getTime()) / 3600000;
               return hoursAgo <= 48;
             })
-            .sort((a:any,b:any)=> (b?.number||0)-(a?.number||0))
+            // .sort((a:any,b:any)=> (b?.number||0)-(a?.number||0)) // REMOVED: Sorting is now done on data load
             .map((r: any) => <TicketItem key={r.conv_id} r={r} />)
             : <div className="text-gray-500">Loading tickets...</div>}
         </div>
 
         {/* Older Tickets (Collapsible) */}
         <details className="mt-6">
-          <summary className="text-md font-semibold text-gray-700 cursor-pointer">
+          <summary className="text-md font-semibold text-gray-700 cursor-pointer bg-gray-100 p-2 rounded-lg hover:bg-gray-200">
             Older Tickets (&gt;48 Hours)
           </summary>
           <div className="space-y-3 mt-4">
@@ -917,10 +921,10 @@ const Dashboard = () => {
                 const hoursAgo = (new Date().getTime() - ticketDate.getTime()) / 3600000;
                 return hoursAgo > 48;
               })
-              .sort((a:any,b:any)=> (b?.number||0)-(a?.number||0))
+              // .sort((a:any,b:any)=> (b?.number||0)-(a?.number||0)) // REMOVED: Sorting is now done on data load
               .map((r: any) => <TicketItem key={r.conv_id} r={r} />)
               : <div className="text-gray-500">Loading tickets...</div>}
-                      </div>
+          </div>
         </details>
       </div>
 
