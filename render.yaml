@@ -40,5 +40,4 @@ databases:
     databaseName: hs_trends
     user: hs_trends
     plan: starter
-    ram: 1
 
