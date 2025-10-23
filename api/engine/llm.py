@@ -84,6 +84,29 @@ def enrich(text: str, user_corrections: list = None) -> dict:
     
     # STRICT: If less than 40 chars of real content, it's EMPTY
     if len(cleaned) < 40:
+        # Before declaring it empty, double-check for a message on the device line
+        device_line_match = re.search(r'^\s*device\s*[=:]\s*(.*)', text, re.IGNORECASE | re.MULTILINE)
+        if device_line_match:
+            device_content = device_line_match.group(1).strip()
+            words = device_content.split()
+            message_starters = {"how", "why", "what", "when", "where", "who", "i", "my", "it", "the", "a", "an", "is", "in", "for", "to", "and", "but", "help", "please", "game"}
+            
+            split_point = -1
+            for i, word in enumerate(words):
+                if i >= 1 and word.lower().strip(',.') in message_starters:
+                    split_point = i
+                    break
+            
+            if split_point != -1:
+                # A message was found on the device line, so the ticket is NOT empty.
+                # We can proceed with the message content.
+                message_from_device_line = " ".join(words[split_point:])
+                # Prepend this to the cleaned text to ensure it's processed
+                cleaned = message_from_device_line + " " + cleaned
+                print(f"💬 Found message on device line: '{message_from_device_line[:100]}...'")
+
+    # Re-check length after potentially adding message from device line
+    if len(cleaned) < 40:
         print(f"🚫 EMPTY TICKET BLOCKED - Only {len(cleaned)} chars after removing template (original: {original_len})")
         print(f"   Cleaned text: '{cleaned[:100]}'")
         return {
