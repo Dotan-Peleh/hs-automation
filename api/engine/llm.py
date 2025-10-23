@@ -39,6 +39,7 @@ SYSTEM = (
     "- lost_progress: save data lost\n"
     "- feedback: general feedback/compliments\n"
     "- question: how-to questions\n"
+    "- offerwall_issue: for issues with offer walls and rewarded tasks (not receiving rewards for completing offers)\n"
     "- incomplete_ticket: for empty messages or tickets with only structured data (UserID, OS, etc.)\n"
     "- unreadable: for messages that are incomprehensible, gibberish, or cannot be understood\n\n"
     "Output ONLY the JSON object. No other text."

@@ -302,6 +302,7 @@ const Dashboard = () => {
       if (intent.includes('refund')) return '💰 Refund';
       if (intent.includes('cancel')) return '🚫 Cancel Sub';
       if (intent.includes('billing') || intent.includes('payment')) return '💳 Billing';
+      if (intent.includes('offerwall')) return '🎁 OfferWall';
       if (intent.includes('progress')) return '💾 Lost Progress';
       if (intent.includes('account')) return '🔐 Account';
       if (intent.includes('performance')) return '⚡ Performance';
@@ -346,6 +347,13 @@ const Dashboard = () => {
               <span>📱 {r.entities?.platform}</span>
               <span>🔢 {r.entities?.app_version}</span>
               <span>🕐 {new Date(r.updated_at).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-1 mt-2 flex-wrap">
+                {(r.existing_tags || []).map((t: string) => (
+                    <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-gray-200 text-gray-800 border border-gray-300">
+                        {t}
+                    </span>
+                ))}
             </div>
           </div>
           <div className="flex-shrink-0 flex flex-col gap-2">

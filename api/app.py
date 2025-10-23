@@ -747,6 +747,8 @@ async def process_webhook_event(conv_id: int):
                     new_bucket = 'low'
                 elif intent == 'question' or intent == 'feedback':
                     new_bucket = 'low'
+                elif intent == 'offerwall_issue':
+                    new_bucket = 'low'
 
                 # Keyword-based overrides for critical issues
                 if any(k in raw.lower() for k in ["can't play", "unable to play"]):
@@ -813,6 +815,8 @@ async def process_webhook_event(conv_id: int):
                         slack_tags.append("📭 EMPTY_TICKET")
                     elif intent_val == "unreadable":
                         slack_tags.append("❓ UNREADABLE")
+                    elif intent_val == "offerwall_issue":
+                        slack_tags.append("🎁 OfferWall")
                     
                     # Extract platform and device from entities
                     platform_val = entities.get("platform")
@@ -1212,6 +1216,11 @@ def insights(
         elif sentiment == 'mixed':
             tags.append('sentiment:mixed')
         
+        # Offerwall / rewards for tasks
+        if any(k in t for k in ("offerwall", "tapjoy", "ironsource", "offer", "reward", "task", "gem", "coin", "credit")) and any(k in t for k in ("not received", "didn't get", "missing", "did not receive", "no reward")):
+            tags.append("intent:offerwall_issue")
+            tags.append("tag:offerwall")
+        
         # PRIORITY 1: Beta feedback / reviews / opinions (CHECK FIRST!)
         # These should ALWAYS be LOW priority, even if they mention bugs/crashes
         if any(k in t for k in ("beta feedback", "written new beta feedback", "new beta feedback", "feedback for", "my feedback", "review:", "opinion", "suggestion", "has written new beta")):
@@ -1299,11 +1308,11 @@ def insights(
             tags.append("tag:progress_lost")
             tags.append("intent:bug_report") # Also a bug
         # Platform tags from entities or LLM
-        platform = (entities or {}).get("platform") or (extra or {}).get("platform")
+        platform = (entities or {}).get("platform")
         if isinstance(platform, str) and platform:
             tags.append(f"platform:{platform}")
         # App version
-        appv = (entities or {}).get("app_version") or (extra or {}).get("app_version")
+        appv = (entities or {}).get("app_version")
         if isinstance(appv, str) and appv:
             tags.append(f"version:{appv}")
         return tags
@@ -1858,6 +1867,19 @@ def insights(
         "recommendations": recs,
         "priorityIssue": priority_issue,
         "issue_analysis": issue_analysis,
+        "responseStatus": {
+            "replied": replied_count,
+            "total": len(rows)
+        },
+        # scatter series of ticket numbers (x) over time (y) for spike detection
+        "ticketTimeline": [
+            {
+                "ts": (c.updated_at.isoformat() if c.updated_at else None),
+                "number": c.number,
+                "id": c.id,
+            } for c in rows if c.number is not None
+        ],
+        "radarData": [],
     }
 
 
@@ -1874,19 +1896,22 @@ def dashboard(hours: int = 24):
         hourly.append({
             "ts": (bucket_start.isoformat() + "Z"),  # used by frontend for x-axis
             "date": bucket_start.strftime("%I%p").lstrip('0').lower(),  # backward-compat label
-            "bugs": 0, "crashes": 0, "uxIssues": 0, "performance": 0, "technical": 0, "questions": 0, "features": 0, "payments": 0, "total": 0
+            "bugs": 0, "crashes": 0, "uxIssues": 0, "performance": 0, "technical": 0, "questions": 0, "features": 0, "payments": 0, "offerwalls": 0, "total": 0
         })
 
-    cat_counts = {"bug": 0, "crash": 0, "ux": 0, "performance": 0, "technical": 0, "question": 0, "feature_request": 0, "payment": 0}
+    cat_counts = {"bug": 0, "crash": 0, "ux": 0, "performance": 0, "technical": 0, "question": 0, "feature_request": 0, "payment": 0, "offerwall": 0}
     platform_counts = {}
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     cluster_counts = {}
     cluster_meta = {}
+    replied_count = 0
 
     with get_session() as s:
         rows = s.query(HsConversation).filter(HsConversation.updated_at >= win_start).all()
-
+        
     for c in rows:
+        if c.tags and 'agent:replied' in c.tags:
+            replied_count += 1
         raw = ((c.subject or "") + "\n" + (c.last_text or "")).strip()
         if not raw:
             continue
@@ -1987,6 +2012,7 @@ def dashboard(hours: int = 24):
             "question": "questions",
             "feature_request": "features",
             "payment": "payments",
+            "offerwall": "offerwalls",
         }
         matched_any = False
         for cat in (cats or []):
@@ -2026,13 +2052,13 @@ def dashboard(hours: int = 24):
                 pass
 
     for r in hourly:
-        r["total"] = (r.get("bugs",0) + r.get("crashes",0) + r.get("uxIssues",0) + r.get("performance",0) + r.get("technical",0) + r.get("questions",0) + r.get("features",0) + r.get("payments",0))
+        r["total"] = (r.get("bugs",0) + r.get("crashes",0) + r.get("uxIssues",0) + r.get("performance",0) + r.get("technical",0) + r.get("questions",0) + r.get("features",0) + r.get("payments",0) + r.get("offerwalls", 0))
 
     # Build category pie
     def pretty(name: str) -> str:
         mapping = {
             "bug": "Bug", "crash": "Crash", "ux": "UX Issue", "performance": "Performance",
-            "technical": "Technical", "question": "Question", "feature_request": "Feature Request", "payment": "Payments"
+            "technical": "Technical", "question": "Question", "feature_request": "Feature Request", "payment": "Payments", "offerwall": "OfferWall"
         }
         return mapping.get(name, name.title())
     categoryData = [{"name": pretty(k), "value": v, "percentage": 0} for k,v in cat_counts.items()]

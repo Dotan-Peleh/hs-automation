@@ -8,6 +8,7 @@ CATEGORY_PATTERNS = {
     "account":    [r"\b(login|signin|password|auth|verification)\b"],
     "store":      [r"\b(store|iap|ads|ad\s*watch|rewarded)\b"],
     "device":     [r"\b(android|ios|iphone|ipad|samsung|xiaomi|pixel|huawei)\b"],
+    "offerwall":  [r"\b(offerwall|tapjoy|ironsource|reward|offer)\b"],
 }
 
 WEIGHTS = {
