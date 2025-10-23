@@ -16,6 +16,10 @@ services:
         sync: false
       - key: HS_API_TOKEN
         sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_DEFAULT_CHANNEL
+        sync: false
     healthCheckPath: /healthz
     plan: starter
     
