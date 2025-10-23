@@ -178,11 +178,20 @@ const Dashboard = () => {
       if (result.updated_ticket) {
         const updatedRecs = insightRecs.map(rec => {
           if (rec.conv_id === convId) {
-            return {
-              ...rec,
-              intent: correctIntent || rec.intent,
-              severity_bucket: correctSeverity || rec.severity_bucket,
-            };
+            const newRec = { ...rec };
+            newRec.intent = correctIntent || rec.intent;
+            newRec.severity_bucket = correctSeverity || rec.severity_bucket;
+            if (correctIntent) {
+              const newSuggestedTags = (rec.suggested_tags || []).filter((t: string) => !t.startsWith('intent:'));
+              newSuggestedTags.unshift(`intent:${correctIntent}`);
+              newRec.suggested_tags = newSuggestedTags;
+            }
+            if (correctSeverity) {
+              const newSuggestedTags = (newRec.suggested_tags || rec.suggested_tags || []).filter((t: string) => !t.startsWith('sev:'));
+              newSuggestedTags.unshift(`sev:${correctSeverity}`);
+              newRec.suggested_tags = newSuggestedTags;
+            }
+            return newRec;
           }
           return rec;
         });

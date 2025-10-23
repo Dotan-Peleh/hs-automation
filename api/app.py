@@ -1218,8 +1218,10 @@ def insights(
         
         # Offerwall / rewards for tasks
         if any(k in t for k in ("offerwall", "tapjoy", "ironsource", "offer", "reward", "task", "gem", "coin", "credit")) and any(k in t for k in ("not received", "didn't get", "missing", "did not receive", "no reward")):
-            tags.append("intent:offerwall_issue")
-            tags.append("tag:offerwall")
+            # EXCLUSION: Do not tag as offerwall if it's about in-game features
+            if not any(k in t for k in ("blossom bounty", "flower")):
+                tags.append("intent:offerwall_issue")
+                tags.append("tag:offerwall")
         
         # PRIORITY 1: Beta feedback / reviews / opinions (CHECK FIRST!)
         # These should ALWAYS be LOW priority, even if they mention bugs/crashes
