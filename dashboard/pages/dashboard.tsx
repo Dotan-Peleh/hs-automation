@@ -22,6 +22,7 @@ const Dashboard = () => {
   const [feedbackTicket, setFeedbackTicket] = useState<any>(null);
   const [globalSummary, setGlobalSummary] = useState('');
   const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const openFeedbackModal = (e: React.MouseEvent, ticket: any) => {
     e.preventDefault();
@@ -159,6 +160,7 @@ const Dashboard = () => {
   // Submit tag correction feedback
   const submitFeedback = async (convId: number, correctIntent: string, correctSeverity: string, notes: string) => {
     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+    setIsSubmitting(true);
     try {
       const params = new URLSearchParams({
         conv_id: convId.toString(),
@@ -195,6 +197,8 @@ const Dashboard = () => {
       console.error('Failed to submit feedback:', e);
       setToastMsg('❌ Failed to save feedback');
       setTimeout(() => setToastMsg(''), 3000);
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -454,8 +458,9 @@ const Dashboard = () => {
                     submitFeedback(feedbackTicket.conv_id, intent, severity, notes);
                   }}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  disabled={isSubmitting}
                 >
-                  Submit Feedback
+                  {isSubmitting ? 'Submitting...' : 'Submit Feedback'}
                 </button>
                 <button
                   onClick={() => setFeedbackTicket(null)}
