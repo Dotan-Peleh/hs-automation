@@ -415,6 +415,7 @@ const Dashboard = () => {
                   <option value="crash_report">💥 Crash (App Closes/Freezes)</option>
                   <option value="bug_report">🐛 Bug (Gameplay Issue)</option>
                   <option value="billing_issue">💳 Billing/Payment Issue</option>
+                  <option value="offerwall_issue">🎁 OfferWall Issue</option>
                   <option value="refund_request">💰 Refund Request</option>
                   <option value="delete_account">🚫 Delete Account / Cancel Sub</option>
                   <option value="lost_progress">💾 Lost Progress/Save Issue</option>
